@@ -282,6 +282,10 @@ python run.py --execution-provider amd
 -   DirectML and ROCm execution currently run frame processing sequentially for
     stability. The application will automatically cap execution threads to `1`
     when these providers are selected.
+-   GFPGAN face enhancement falls back to CPU by default when DirectML is in
+    use because torch-directml cannot run the model reliably. Set the
+    environment variable `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the
+    experimental DirectML path.
 
 **OpenVINO™ Execution Provider (Intel)**
 

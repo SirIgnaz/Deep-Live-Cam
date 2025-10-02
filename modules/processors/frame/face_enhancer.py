@@ -30,6 +30,7 @@ from modules.utilities import (
 FACE_ENHANCER = None
 FACE_ENHANCER_DEVICE: Optional[torch.device] = None
 DIRECTML_FACE_ENHANCER_DISABLED = False
+DIRECTML_FACE_ENHANCER_FORCED_CPU = False
 THREAD_SEMAPHORE = threading.Semaphore()
 THREAD_LOCK = threading.Lock()
 NAME = "DLC.FACE-ENHANCER"
@@ -38,6 +39,10 @@ MAX_DIRECTML_ERROR_LENGTH = 200
 abs_dir = os.path.dirname(os.path.abspath(__file__))
 models_dir = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(abs_dir))), "models"
+)
+ALLOW_DIRECTML_FACE_ENHANCER = (
+    os.environ.get("DLC_ALLOW_DIRECTML_FACE_ENHANCER", "").strip().lower()
+    in ("1", "true", "yes", "on")
 )
 
 
@@ -89,8 +94,27 @@ def _directml_error_summary(error: Exception) -> str:
     return message
 
 
+def _force_cpu_face_enhancer(
+    message: Optional[str] = None, mark_disabled: bool = False
+) -> torch.device:
+    """Return a CPU device and mark DirectML as unusable when requested."""
+
+    global DIRECTML_FACE_ENHANCER_DISABLED, DIRECTML_FACE_ENHANCER_FORCED_CPU
+
+    if mark_disabled:
+        DIRECTML_FACE_ENHANCER_DISABLED = True
+
+    DIRECTML_FACE_ENHANCER_FORCED_CPU = True
+
+    if message:
+        update_status(message, NAME)
+
+    return torch.device("cpu")
+
+
 def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
     global FACE_ENHANCER, FACE_ENHANCER_DEVICE, DIRECTML_FACE_ENHANCER_DISABLED
+    global DIRECTML_FACE_ENHANCER_FORCED_CPU
 
     model_path = os.path.join(models_dir, "GFPGANv1.4.pth")
 
@@ -121,8 +145,23 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
             and TORCH_DIRECTML_AVAILABLE
             and not DIRECTML_FACE_ENHANCER_DISABLED
         ):
-            selected_device = DIRECTML_DEVICE
-            device_priority.append("DirectML")
+            if not ALLOW_DIRECTML_FACE_ENHANCER:
+                if not DIRECTML_FACE_ENHANCER_FORCED_CPU:
+                    selected_device = _force_cpu_face_enhancer(
+                        (
+                            "DirectML face enhancement is disabled by default "
+                            "because torch-directml cannot execute GFPGAN "
+                            "reliably. Using CPU instead. Set "
+                            "DLC_ALLOW_DIRECTML_FACE_ENHANCER=1 to override."
+                        )
+                    )
+                    device_priority.append("CPU (DirectML disabled)")
+                else:
+                    selected_device = torch.device("cpu")
+                    device_priority.append("CPU (DirectML disabled)")
+            else:
+                selected_device = DIRECTML_DEVICE
+                device_priority.append("DirectML")
         elif (
             'DmlExecutionProvider' in modules.globals.execution_providers
             and DIRECTML_FACE_ENHANCER_DISABLED
@@ -230,41 +269,39 @@ def enhance_face(temp_frame: Frame) -> Frame:
             )
 
             if directml_tensor_mismatch:
-                DIRECTML_FACE_ENHANCER_DISABLED = True
-                update_status(
+                cpu_device = _force_cpu_face_enhancer(
                     (
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
                     ),
-                    NAME,
+                    mark_disabled=True,
                 )
                 print(
                     "DirectML inference for GFPGAN failed due to tensor type mismatch; "
                     f"falling back to CPU: {runtime_error}"
                 )
                 FACE_ENHANCER = None
-                enhancer = get_face_enhancer(torch.device("cpu"))
+                enhancer = get_face_enhancer(cpu_device)
                 _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
             elif (
                 TORCH_DIRECTML_AVAILABLE
                 and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
             ):
-                DIRECTML_FACE_ENHANCER_DISABLED = True
-                update_status(
+                cpu_device = _force_cpu_face_enhancer(
                     (
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
                     ),
-                    NAME,
+                    mark_disabled=True,
                 )
                 print(
                     "DirectML inference for GFPGAN failed; "
                     f"falling back to CPU: {runtime_error}"
                 )
                 FACE_ENHANCER = None
-                enhancer = get_face_enhancer(torch.device("cpu"))
+                enhancer = get_face_enhancer(cpu_device)
                 _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
             else:
                 raise
@@ -273,21 +310,20 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 TORCH_DIRECTML_AVAILABLE
                 and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
             ):
-                DIRECTML_FACE_ENHANCER_DISABLED = True
-                update_status(
+                cpu_device = _force_cpu_face_enhancer(
                     (
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(unexpected_error)}"
                     ),
-                    NAME,
+                    mark_disabled=True,
                 )
                 print(
                     "DirectML inference for GFPGAN encountered an unexpected error; "
                     f"falling back to CPU: {unexpected_error}"
                 )
                 FACE_ENHANCER = None
-                enhancer = get_face_enhancer(torch.device("cpu"))
+                enhancer = get_face_enhancer(cpu_device)
                 _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
             else:
                 raise
