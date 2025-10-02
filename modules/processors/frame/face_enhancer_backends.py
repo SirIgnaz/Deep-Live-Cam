@@ -128,7 +128,6 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         face_padding: float = 0.1,
         mask_blur: int = 45,
         color_correction_strength: float = 1.0,
-
     ) -> None:
         if ort is None:
             raise RuntimeError("onnxruntime is required for CodeFormerOnnxBackend")

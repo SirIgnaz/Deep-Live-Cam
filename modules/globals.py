@@ -41,3 +41,11 @@ show_mouth_mask_box = False
 mask_feather_ratio = 8
 mask_down_size = 0.50
 mask_size = 1
+
+# DirectML face enhancement can be enabled via UI or environment variable. Keep
+# the environment variable compatibility so headless executions behave the same
+# way as previous releases.
+allow_directml_face_enhancer = (
+    os.environ.get("DLC_ALLOW_DIRECTML_FACE_ENHANCER", "").strip().lower()
+    in ("1", "true", "yes", "on")
+)
