@@ -96,6 +96,14 @@ def _update_directml_face_enhancer_override(enabled: bool) -> None:
     face_enhancer_module.set_directml_face_enhancer_override(enabled)
 
 
+def _update_codeformer_backend_preferences(mask_blur: int, color_strength: float) -> None:
+    from modules.processors.frame import face_enhancer as face_enhancer_module
+
+    face_enhancer_module.update_codeformer_preferences(
+        mask_blur=mask_blur, color_strength=color_strength
+    )
+
+
 def save_switch_states():
     switch_states = {
         "keep_fps": modules.globals.keep_fps,
@@ -112,6 +120,8 @@ def save_switch_states():
         "show_fps": modules.globals.show_fps,
         "mouth_mask": modules.globals.mouth_mask,
         "show_mouth_mask_box": modules.globals.show_mouth_mask_box,
+        "codeformer_mask_blur": modules.globals.codeformer_mask_blur,
+        "codeformer_color_strength": modules.globals.codeformer_color_strength,
     }
     with open("switch_states.json", "w") as f:
         json.dump(switch_states, f)
@@ -139,6 +149,14 @@ def load_switch_states():
         modules.globals.mouth_mask = switch_states.get("mouth_mask", False)
         modules.globals.show_mouth_mask_box = switch_states.get(
             "show_mouth_mask_box", False
+        )
+        modules.globals.codeformer_mask_blur = int(
+            switch_states.get("codeformer_mask_blur", modules.globals.codeformer_mask_blur)
+        )
+        modules.globals.codeformer_color_strength = float(
+            switch_states.get(
+                "codeformer_color_strength", modules.globals.codeformer_color_strength
+            )
         )
     except FileNotFoundError:
         # If the file doesn't exist, use default values
@@ -387,6 +405,153 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     )
     directml_face_enhancer_switch.grid(row=3, column=0, sticky="ew", pady=12)
 
+    codeformer_settings_frame = ctk.CTkFrame(right_option_column, fg_color="transparent")
+    codeformer_settings_frame.grid(row=4, column=0, sticky="ew", pady=12)
+    codeformer_settings_frame.grid_columnconfigure(0, weight=1)
+    codeformer_settings_frame.grid_columnconfigure(1, weight=0)
+    codeformer_settings_frame.grid_columnconfigure(2, weight=0)
+
+    codeformer_header = ctk.CTkLabel(
+        codeformer_settings_frame,
+        text=_("CodeFormer Face Enhance"),
+        anchor="w",
+        font=ctk.CTkFont(size=13, weight="bold"),
+    )
+    codeformer_header.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+    def _save_codeformer_settings() -> None:
+        save_switch_states()
+        _update_codeformer_backend_preferences(
+            modules.globals.codeformer_mask_blur,
+            modules.globals.codeformer_color_strength,
+        )
+
+    mask_blur_label = ctk.CTkLabel(
+        codeformer_settings_frame,
+        text=_("Mask blur"),
+        anchor="w",
+    )
+    mask_blur_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+
+    mask_blur_slider = ctk.CTkSlider(
+        codeformer_settings_frame,
+        from_=0,
+        to=151,
+        number_of_steps=151,
+    )
+    mask_blur_slider.grid(row=2, column=0, columnspan=3, sticky="ew")
+    mask_blur_slider.set(modules.globals.codeformer_mask_blur)
+
+    mask_blur_value = ctk.StringVar(value=str(modules.globals.codeformer_mask_blur))
+    mask_blur_entry = ctk.CTkEntry(
+        codeformer_settings_frame,
+        textvariable=mask_blur_value,
+        width=70,
+        justify="center",
+    )
+    mask_blur_entry.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+
+    def _set_mask_blur(value: float, *, from_slider: bool = False) -> None:
+        try:
+            blur_value = int(round(float(value)))
+        except (TypeError, ValueError):
+            blur_value = modules.globals.codeformer_mask_blur
+        blur_value = max(0, min(151, blur_value))
+        modules.globals.codeformer_mask_blur = blur_value
+        mask_blur_value.set(str(blur_value))
+        if not from_slider:
+            mask_blur_slider.set(blur_value)
+        _save_codeformer_settings()
+
+    mask_blur_decrease = ctk.CTkButton(
+        codeformer_settings_frame,
+        text="-",
+        width=30,
+        command=lambda: _set_mask_blur(modules.globals.codeformer_mask_blur - 1),
+    )
+    mask_blur_decrease.grid(row=3, column=1, padx=(6, 3), pady=(6, 0))
+
+    mask_blur_increase = ctk.CTkButton(
+        codeformer_settings_frame,
+        text="+",
+        width=30,
+        command=lambda: _set_mask_blur(modules.globals.codeformer_mask_blur + 1),
+    )
+    mask_blur_increase.grid(row=3, column=2, padx=(3, 0), pady=(6, 0))
+
+    mask_blur_slider.configure(command=lambda value: _set_mask_blur(value, from_slider=True))
+    mask_blur_entry.bind("<Return>", lambda _: _set_mask_blur(mask_blur_value.get()))
+    mask_blur_entry.bind("<FocusOut>", lambda _: _set_mask_blur(mask_blur_value.get()))
+
+    color_strength_label = ctk.CTkLabel(
+        codeformer_settings_frame,
+        text=_("Color match strength"),
+        anchor="w",
+    )
+    color_strength_label.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+
+    color_strength_slider = ctk.CTkSlider(
+        codeformer_settings_frame,
+        from_=0.0,
+        to=1.0,
+        number_of_steps=100,
+    )
+    color_strength_slider.grid(row=5, column=0, columnspan=3, sticky="ew")
+    color_strength_slider.set(modules.globals.codeformer_color_strength)
+
+    color_strength_value = ctk.StringVar(
+        value=f"{modules.globals.codeformer_color_strength:.2f}"
+    )
+    color_strength_entry = ctk.CTkEntry(
+        codeformer_settings_frame,
+        textvariable=color_strength_value,
+        width=70,
+        justify="center",
+    )
+    color_strength_entry.grid(row=6, column=0, sticky="ew", pady=(6, 0))
+
+    def _set_color_strength(value: float, *, from_slider: bool = False) -> None:
+        try:
+            strength = float(value)
+        except (TypeError, ValueError):
+            strength = modules.globals.codeformer_color_strength
+        strength = max(0.0, min(1.0, round(strength, 2)))
+        modules.globals.codeformer_color_strength = strength
+        color_strength_value.set(f"{strength:.2f}")
+        if not from_slider:
+            color_strength_slider.set(strength)
+        _save_codeformer_settings()
+
+    color_strength_decrease = ctk.CTkButton(
+        codeformer_settings_frame,
+        text="-",
+        width=30,
+        command=lambda: _set_color_strength(
+            modules.globals.codeformer_color_strength - 0.05
+        ),
+    )
+    color_strength_decrease.grid(row=6, column=1, padx=(6, 3), pady=(6, 0))
+
+    color_strength_increase = ctk.CTkButton(
+        codeformer_settings_frame,
+        text="+",
+        width=30,
+        command=lambda: _set_color_strength(
+            modules.globals.codeformer_color_strength + 0.05
+        ),
+    )
+    color_strength_increase.grid(row=6, column=2, padx=(3, 0), pady=(6, 0))
+
+    color_strength_slider.configure(
+        command=lambda value: _set_color_strength(value, from_slider=True)
+    )
+    color_strength_entry.bind(
+        "<Return>", lambda _: _set_color_strength(color_strength_value.get())
+    )
+    color_strength_entry.bind(
+        "<FocusOut>", lambda _: _set_color_strength(color_strength_value.get())
+    )
+
     show_fps_value = ctk.BooleanVar(value=modules.globals.show_fps)
     show_fps_switch = ctk.CTkSwitch(
         right_option_column,
@@ -398,7 +563,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_fps_switch.grid(row=4, column=0, sticky="ew", pady=12)
+    show_fps_switch.grid(row=5, column=0, sticky="ew", pady=12)
 
     show_mouth_mask_box_var = ctk.BooleanVar(value=modules.globals.show_mouth_mask_box)
     show_mouth_mask_box_switch = ctk.CTkSwitch(
@@ -415,7 +580,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_mouth_mask_box_switch.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+    show_mouth_mask_box_switch.grid(row=6, column=0, sticky="ew", pady=(12, 0))
 
     cta_frame = ctk.CTkFrame(content, fg_color="transparent")
     cta_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
