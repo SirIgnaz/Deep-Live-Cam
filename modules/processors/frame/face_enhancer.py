@@ -29,6 +29,7 @@ from modules.utilities import (
 
 FACE_ENHANCER = None
 FACE_ENHANCER_DEVICE: Optional[torch.device] = None
+DIRECTML_FACE_ENHANCER_DISABLED = False
 THREAD_SEMAPHORE = threading.Semaphore()
 THREAD_LOCK = threading.Lock()
 NAME = "DLC.FACE-ENHANCER"
@@ -79,7 +80,7 @@ def _device_name(device: Optional[torch.device]) -> str:
 
 
 def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
-    global FACE_ENHANCER, FACE_ENHANCER_DEVICE
+    global FACE_ENHANCER, FACE_ENHANCER_DEVICE, DIRECTML_FACE_ENHANCER_DISABLED
 
     model_path = os.path.join(models_dir, "GFPGANv1.4.pth")
 
@@ -87,15 +88,44 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
     device_priority: List[str] = []
 
     if force_device is not None:
-        selected_device = force_device
-        device_priority.append(_device_name(selected_device))
+        if (
+            TORCH_DIRECTML_AVAILABLE
+            and DIRECTML_FACE_ENHANCER_DISABLED
+            and force_device == DIRECTML_DEVICE
+        ):
+            update_status(
+                (
+                    "DirectML face enhancement previously failed; "
+                    "using CPU fallback instead."
+                ),
+                NAME,
+            )
+            selected_device = torch.device("cpu")
+            device_priority.append("CPU (fallback)")
+        else:
+            selected_device = force_device
+            device_priority.append(_device_name(selected_device))
     else:
         if (
             'DmlExecutionProvider' in modules.globals.execution_providers
             and TORCH_DIRECTML_AVAILABLE
+            and not DIRECTML_FACE_ENHANCER_DISABLED
         ):
             selected_device = DIRECTML_DEVICE
             device_priority.append("DirectML")
+        elif (
+            'DmlExecutionProvider' in modules.globals.execution_providers
+            and DIRECTML_FACE_ENHANCER_DISABLED
+        ):
+            update_status(
+                (
+                    "DirectML face enhancement previously failed; "
+                    "using CPU fallback instead."
+                ),
+                NAME,
+            )
+            selected_device = torch.device("cpu")
+            device_priority.append("CPU (fallback)")
         elif (
             'DmlExecutionProvider' in modules.globals.execution_providers
             and not TORCH_DIRECTML_AVAILABLE
@@ -125,6 +155,8 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
         )
         FACE_ENHANCER_DEVICE = selected_device
     except Exception as directml_error:
+        if TORCH_DIRECTML_AVAILABLE and selected_device == DIRECTML_DEVICE:
+            DIRECTML_FACE_ENHANCER_DISABLED = True
         if (
             force_device is None
             and TORCH_DIRECTML_AVAILABLE
@@ -166,7 +198,7 @@ def get_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
 
 
 def enhance_face(temp_frame: Frame) -> Frame:
-    global FACE_ENHANCER
+    global FACE_ENHANCER, DIRECTML_FACE_ENHANCER_DISABLED
 
     with THREAD_SEMAPHORE:
         enhancer = get_face_enhancer()
@@ -181,6 +213,7 @@ def enhance_face(temp_frame: Frame) -> Frame:
             )
 
             if directml_tensor_mismatch:
+                DIRECTML_FACE_ENHANCER_DISABLED = True
                 update_status(
                     (
                         "DirectML face enhancement failed during inference, "
