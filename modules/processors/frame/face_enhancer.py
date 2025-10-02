@@ -126,6 +126,20 @@ def _force_cpu_face_enhancer(
     return torch.device("cpu")
 
 
+def _directml_override_hint() -> str:
+    """Provide additional guidance when a forced DirectML run still fails."""
+
+    if not ALLOW_DIRECTML_FACE_ENHANCER:
+        return ""
+
+    return (
+        "\nDirectML override is active, but GFPGAN cannot execute on the "
+        "current torch-directml build due to incompatible tensor types. "
+        "Remove DLC_ALLOW_DIRECTML_FACE_ENHANCER or upgrade to a torch-directml "
+        "release that fixes the mismatch to avoid this fallback."
+    )
+
+
 def _initialise_face_enhancer(
     force_device: Optional[torch.device] = None,
 ) -> FaceEnhancerBackend:
@@ -232,6 +246,7 @@ def _initialise_face_enhancer(
                 (
                     "DirectML face enhancement failed, switching to CPU. "
                     f"Details: {_directml_error_summary(directml_error)}"
+                    f"{_directml_override_hint()}"
                 ),
                 NAME,
             )
@@ -301,6 +316,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )
@@ -322,6 +338,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )
@@ -346,6 +363,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(unexpected_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )
