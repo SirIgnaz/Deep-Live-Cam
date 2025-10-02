@@ -79,6 +79,24 @@ def parse_args() -> None:
     modules.globals.max_memory = args.max_memory
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
+
+    if any(
+        provider in modules.globals.execution_providers
+        for provider in ("DmlExecutionProvider", "ROCMExecutionProvider")
+    ):
+        default_threads = program.get_default("execution_threads")
+
+        if modules.globals.execution_threads != 1:
+            if modules.globals.execution_threads == default_threads:
+                print(
+                    "\033[33mDirectML/ROCm detected. Limiting execution threads to 1 for stability.\033[0m"
+                )
+            else:
+                print(
+                    "\033[33mDirectML/ROCm detected. Overriding requested execution threads to 1 for stability.\033[0m"
+                )
+
+        modules.globals.execution_threads = 1
     modules.globals.lang = args.lang
 
     #for ENHANCER tumbler:
@@ -135,6 +153,19 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
         if any(normalized_provider in encoded_provider for normalized_provider in normalized_execution_providers)
     ]
 
+
+    if (
+        decoded
+        and 'CPUExecutionProvider' in available_providers
+        and 'CPUExecutionProvider' not in decoded
+        and any(
+            provider in decoded
+            for provider in ('DmlExecutionProvider', 'ROCMExecutionProvider')
+        )
+    ):
+        decoded.append('CPUExecutionProvider')
+
+main
     if not decoded and normalized_execution_providers and 'CPUExecutionProvider' in available_providers:
         print('\033[33mRequested execution provider is not available. Falling back to CPU.\033[0m')
         decoded = ['CPUExecutionProvider']
