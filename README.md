@@ -277,7 +277,6 @@ python run.py --execution-provider dml
 python run.py --execution-provider amd
 # Windows users can also run the helper script
  run-directml.bat
- ```
 
 3. Notes:
 
