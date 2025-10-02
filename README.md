@@ -296,6 +296,10 @@ python run.py --execution-provider amd
     the CodeFormer ONNX weights automatically, and inference uses the DirectML
     execution provider when available.
 
+    significantly slower. Set the environment variable
+    `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the experimental DirectML
+    path if you want to try GPU acceleration instead.
+
 **OpenVINO™ Execution Provider (Intel)**
 
 1. Install dependencies:

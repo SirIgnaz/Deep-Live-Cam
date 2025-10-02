@@ -131,6 +131,43 @@ def _directml_error_summary(error: Exception) -> str:
 
 
 def _select_torch_device(force_device: Optional[torch.device]) -> Tuple[torch.device, List[str]]:
+def _force_cpu_face_enhancer(
+    message: Optional[str] = None, mark_disabled: bool = False
+) -> torch.device:
+    """Return a CPU device and mark DirectML as unusable when requested."""
+
+    global DIRECTML_FACE_ENHANCER_DISABLED, DIRECTML_FACE_ENHANCER_FORCED_CPU
+
+    if mark_disabled:
+        DIRECTML_FACE_ENHANCER_DISABLED = True
+
+    DIRECTML_FACE_ENHANCER_FORCED_CPU = True
+
+    if message:
+        update_status(
+            (
+                f"{message}"
+                "\nContinuing with CPU fallback; this can be significantly slower, "
+
+                "especially on high-resolution videos. The interface may look"
+                " idle while the CPU works through each frame, but progress"
+                " updates will resume once the first frame finishes."
+
+                "especially on high-resolution videos."
+main
+            ),
+            NAME,
+        )
+
+    return torch.device("cpu")
+
+
+def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
+    global FACE_ENHANCER, FACE_ENHANCER_DEVICE, DIRECTML_FACE_ENHANCER_DISABLED
+    global DIRECTML_FACE_ENHANCER_FORCED_CPU
+
+    model_path = os.path.join(models_dir, "GFPGANv1.4.pth")
+
     selected_device: Optional[torch.device] = None
     device_priority: List[str] = []
 
