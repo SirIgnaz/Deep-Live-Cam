@@ -139,6 +139,38 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
 
     normalized_execution_providers: List[str] = []
     for execution_provider in execution_providers:
+        normalized_execution_providers.extend(
+            provider_aliases.get(execution_provider, [execution_provider])
+        )
+
+    # remove duplicates while preserving order
+    seen = set()
+    normalized_execution_providers = [
+        provider
+        for provider in normalized_execution_providers
+        if not (provider in seen or seen.add(provider))
+    ]
+
+    available_providers = onnxruntime.get_available_providers()
+    encoded_providers = encode_execution_providers(available_providers)
+
+    decoded: List[str] = []
+    for provider, encoded_provider in zip(available_providers, encoded_providers):
+        if any(
+            normalized_provider in encoded_provider
+            for normalized_provider in normalized_execution_providers
+        ):
+            decoded.append(provider)
+
+    cpu_available = 'CPUExecutionProvider' in available_providers
+    requested_amd = any(
+        provider in decoded for provider in ('DmlExecutionProvider', 'ROCMExecutionProvider')
+    )
+
+    if requested_amd and cpu_available and 'CPUExecutionProvider' not in decoded:
+        decoded.append('CPUExecutionProvider')
+
+    if not decoded and normalized_execution_providers and cpu_available:
         normalized_execution_providers.extend(provider_aliases.get(execution_provider, [execution_provider]))
 
     # remove duplicates while preserving order
