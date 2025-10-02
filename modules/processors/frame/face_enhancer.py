@@ -111,7 +111,13 @@ def _force_cpu_face_enhancer(
             (
                 f"{message}"
                 "\nContinuing with CPU fallback; this can be significantly slower, "
+
+                "especially on high-resolution videos. The interface may look"
+                " idle while the CPU works through each frame, but progress"
+                " updates will resume once the first frame finishes."
+
                 "especially on high-resolution videos."
+main
             ),
             NAME,
         )
