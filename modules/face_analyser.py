@@ -135,7 +135,20 @@ def get_unique_faces_from_target_video() -> Any:
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
                 temp.append({'frame': frame['frame'], 'faces': [face for face in frame['faces'] if face['target_centroid'] == i], 'location': frame['location']})
 
-            modules.globals.source_target_map[i]['target_faces_in_frame'] = temp
+            filtered_temp = []
+            for frame_entry in temp:
+                if isinstance(frame_entry, dict):
+                    new_entry = dict(frame_entry)
+                    faces = frame_entry.get('faces')
+                    if isinstance(faces, list):
+                        new_entry['faces'] = list(faces)
+                    filtered_temp.append(new_entry)
+                else:
+                    filtered_temp.append(frame_entry)
+
+            modules.globals.source_target_map[i]['_all_target_faces_in_frame'] = temp
+            modules.globals.source_target_map[i]['target_faces_in_frame_filtered'] = filtered_temp
+            modules.globals.source_target_map[i]['target_faces_in_frame'] = filtered_temp
 
         # dump_faces(centroids, frame_face_embeddings)
         default_target_face()
@@ -145,15 +158,16 @@ def get_unique_faces_from_target_video() -> Any:
 
 def default_target_face():
     for map in modules.globals.source_target_map:
+        frames = map.get('target_faces_in_frame_filtered') or map.get('target_faces_in_frame') or []
         best_face = None
         best_frame = None
-        for frame in map['target_faces_in_frame']:
+        for frame in frames:
             if len(frame['faces']) > 0:
                 best_face = frame['faces'][0]
                 best_frame = frame
                 break
 
-        for frame in map['target_faces_in_frame']:
+        for frame in frames:
             for face in frame['faces']:
                 if face['det_score'] > best_face['det_score']:
                     best_face = face

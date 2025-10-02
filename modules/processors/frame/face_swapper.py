@@ -254,10 +254,13 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
         if modules.globals.many_faces:
             source_face = default_source_face()
             for map in modules.globals.source_target_map:
+                target_frames = (
+                    map.get("target_faces_in_frame_filtered")
+                    or map.get("target_faces_in_frame")
+                    or []
+                )
                 target_frame = [
-                    f
-                    for f in map["target_faces_in_frame"]
-                    if f["location"] == temp_frame_path
+                    f for f in target_frames if f.get("location") == temp_frame_path
                 ]
 
                 for frame in target_frame:
@@ -267,10 +270,13 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
         elif not modules.globals.many_faces:
             for map in modules.globals.source_target_map:
                 if "source" in map:
+                    target_frames = (
+                        map.get("target_faces_in_frame_filtered")
+                        or map.get("target_faces_in_frame")
+                        or []
+                    )
                     target_frame = [
-                        f
-                        for f in map["target_faces_in_frame"]
-                        if f["location"] == temp_frame_path
+                        f for f in target_frames if f.get("location") == temp_frame_path
                     ]
                     source_face = map["source"]["face"]
 
