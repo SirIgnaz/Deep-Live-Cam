@@ -33,6 +33,7 @@ execution_threads = None
 headless = None
 log_level = "error"
 fp_ui: Dict[str, bool] = {"face_enhancer": False}
+face_enhancer_backend = "gfpgan-torch"
 camera_input_combobox = None
 webcam_preview_running = False
 show_fps = False
