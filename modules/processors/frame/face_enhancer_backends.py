@@ -170,6 +170,16 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         )
         self._canonical_points = template * (self.input_size / 112.0)
 
+    def set_mask_blur(self, mask_blur: int) -> None:
+        """Update the Gaussian blur kernel size used for the composite mask."""
+
+        self.mask_blur = int(max(0, mask_blur))
+
+    def set_color_correction_strength(self, strength: float) -> None:
+        """Update the Lab colour transfer strength applied during blending."""
+
+        self.color_correction_strength = float(np.clip(strength, 0.0, 1.0))
+
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
@@ -313,6 +323,14 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         face: Optional[Face] = None,
         **kwargs: Any,
     ) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]], Frame]:
+        mask_blur_override = kwargs.pop("mask_blur", None)
+        if mask_blur_override is not None:
+            self.set_mask_blur(mask_blur_override)
+
+        color_strength_override = kwargs.pop("color_correction_strength", None)
+        if color_strength_override is not None:
+            self.set_color_correction_strength(color_strength_override)
+
         if face is None:
             logger.debug("CodeFormerOnnxBackend.enhance called without a face; returning original frame")
             return None, None, frame
