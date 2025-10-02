@@ -287,6 +287,7 @@ python run.py --execution-provider amd
     appear to "hang" on high-resolution media because CPU inference is
     significantly slower—the UI may seem idle until the first frame completes.
     Set the environment variable
+    significantly slower. Set the environment variable
     `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the experimental DirectML
     path if you want to try GPU acceleration instead.
 
