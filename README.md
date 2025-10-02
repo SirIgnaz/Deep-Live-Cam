@@ -292,6 +292,11 @@ python run.py --execution-provider amd
     tensor type mismatch after enabling the override, the installed
     torch-directml build does not support GFPGAN and the backend will continue
     on the CPU.
+    Set the environment variable `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt
+    into the experimental DirectML path if you want to try GPU acceleration.
+    If you still encounter a tensor type mismatch after enabling the override,
+    the installed torch-directml build does not support GFPGAN and the backend
+    will continue on the CPU.
 
 **OpenVINO™ Execution Provider (Intel)**
 

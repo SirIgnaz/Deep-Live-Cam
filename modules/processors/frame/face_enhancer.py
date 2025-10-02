@@ -149,6 +149,7 @@ def _directml_override_hint() -> str:
     """Provide additional guidance when a forced DirectML run still fails."""
 
     if not _allow_directml_face_enhancer():
+    if not ALLOW_DIRECTML_FACE_ENHANCER:
         return ""
 
     return (

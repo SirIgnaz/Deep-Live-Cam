@@ -378,6 +378,8 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
                 corrected_canvas = self._match_color(canvas, output_frame, mask)
                 mask_3c = mask[..., None]
                 inv_mask_3c = np.float32(1.0) - mask_3c
+                mask = np.clip(mask, 0.0, 1.0)
+                mask = mask[..., None]
 
                 blended = (
                     corrected_canvas.astype(np.float32) * mask_3c
