@@ -890,10 +890,43 @@ def update_popup_target(map: list, button_num: int) -> list:
     except (IndexError, TypeError):
         return map
 
-    target_frames = entry.get("target_faces_in_frame")
-    if not target_frames:
+    target_frames_all = entry.get("_all_target_faces_in_frame")
+    filtered_frames = entry.get("target_faces_in_frame_filtered")
+
+    def _clone_frame_entry(frame_entry: Dict[str, Any]) -> Dict[str, Any]:
+        if isinstance(frame_entry, dict):
+            cloned_entry = dict(frame_entry)
+            faces = frame_entry.get("faces")
+            if isinstance(faces, list):
+                cloned_entry["faces"] = list(faces)
+            return cloned_entry
+        return frame_entry
+
+    if target_frames_all is None:
+        base_frames = entry.get("target_faces_in_frame")
+        if base_frames:
+            target_frames_all = base_frames
+            entry["_all_target_faces_in_frame"] = target_frames_all
+        elif filtered_frames:
+            target_frames_all = filtered_frames
+            entry["_all_target_faces_in_frame"] = target_frames_all
+
+    if not target_frames_all:
         update_pop_status(_("No recorded target faces are available for this entry!"))
         return map
+
+    if filtered_frames is None:
+        filtered_frames = [_clone_frame_entry(frame) for frame in target_frames_all]
+        entry["target_faces_in_frame_filtered"] = filtered_frames
+
+    entry["target_faces_in_frame"] = filtered_frames
+
+    active_faces = set()
+    for frame_entry in filtered_frames:
+        location = frame_entry.get("location")
+        faces = frame_entry.get("faces", [])
+        for face in faces:
+            active_faces.add((location, id(face)))
 
     def _face_bbox(face_obj):
         if isinstance(face_obj, dict):
@@ -908,7 +941,7 @@ def update_popup_target(map: list, button_num: int) -> list:
     frame_cache: Dict[str, np.ndarray] = {}
     candidates = []
 
-    for frame_entry in target_frames:
+    for frame_entry in target_frames_all:
         location = frame_entry.get("location")
         if not location:
             continue
@@ -937,6 +970,9 @@ def update_popup_target(map: list, button_num: int) -> list:
             if crop.size == 0:
                 continue
 
+            is_active = (
+                (location, id(face)) in active_faces if active_faces else True
+            )
             candidates.append(
                 {
                     "key": (location, idx),
@@ -947,6 +983,7 @@ def update_popup_target(map: list, button_num: int) -> list:
                     "score": _face_score(face),
                     "selection_preview": None,
                     "label_preview": None,
+                    "is_active": is_active,
                 }
             )
 
@@ -955,7 +992,8 @@ def update_popup_target(map: list, button_num: int) -> list:
         return map
 
     selections: Dict[Tuple[str, int], bool] = {
-        candidate["key"]: True for candidate in candidates
+        candidate["key"]: candidate.get("is_active", True)
+        for candidate in candidates
     }
 
     selection_window = ctk.CTkToplevel(POPUP if POPUP is not None else ROOT)
@@ -1100,8 +1138,8 @@ def update_popup_target(map: list, button_num: int) -> list:
             _update_status(_("At least one target face must remain selected."))
             return
 
-        filtered_frames = []
-        for frame_entry in target_frames:
+        filtered_frames_result = []
+        for frame_entry in target_frames_all:
             location = frame_entry.get("location")
             faces = frame_entry.get("faces", [])
             filtered_faces = []
@@ -1109,11 +1147,12 @@ def update_popup_target(map: list, button_num: int) -> list:
                 if selections.get((location, idx), False):
                     filtered_faces.append(face)
             if filtered_faces:
-                new_entry = dict(frame_entry)
+                new_entry = _clone_frame_entry(frame_entry)
                 new_entry["faces"] = filtered_faces
-                filtered_frames.append(new_entry)
+                filtered_frames_result.append(new_entry)
 
-        entry["target_faces_in_frame"] = filtered_frames
+        entry["target_faces_in_frame_filtered"] = filtered_frames_result
+        entry["target_faces_in_frame"] = filtered_frames_result
 
         best_candidate = max(selected_candidates, key=lambda c: c.get("score", 0.0))
         entry["target"] = {"cv2": best_candidate["crop"].copy(), "face": best_candidate["face"]}
