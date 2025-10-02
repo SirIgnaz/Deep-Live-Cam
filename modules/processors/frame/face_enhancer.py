@@ -33,6 +33,7 @@ DIRECTML_FACE_ENHANCER_DISABLED = False
 THREAD_SEMAPHORE = threading.Semaphore()
 THREAD_LOCK = threading.Lock()
 NAME = "DLC.FACE-ENHANCER"
+MAX_DIRECTML_ERROR_LENGTH = 200
 
 abs_dir = os.path.dirname(os.path.abspath(__file__))
 models_dir = os.path.join(
@@ -77,6 +78,15 @@ def _device_name(device: Optional[torch.device]) -> str:
     if TORCH_DIRECTML_AVAILABLE and device == DIRECTML_DEVICE:
         return "DirectML"
     return device.type.upper()
+
+
+def _directml_error_summary(error: Exception) -> str:
+    message = str(error).strip()
+    if not message:
+        return "Unknown error"
+    if len(message) > MAX_DIRECTML_ERROR_LENGTH:
+        message = message[: MAX_DIRECTML_ERROR_LENGTH - 1].rstrip() + "…"
+    return message
 
 
 def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
@@ -165,7 +175,7 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
             update_status(
                 (
                     "DirectML face enhancement failed, switching to CPU. "
-                    "See logs for details."
+                    f"Details: {_directml_error_summary(directml_error)}"
                 ),
                 NAME,
             )
@@ -224,7 +234,8 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 update_status(
                     (
                         "DirectML face enhancement failed during inference, "
-                        "switching to CPU. See logs for details."
+                        "switching to CPU. "
+                        f"Details: {_directml_error_summary(runtime_error)}"
                     ),
                     NAME,
                 )
@@ -243,7 +254,8 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 update_status(
                     (
                         "DirectML face enhancement failed during inference, "
-                        "switching to CPU. See logs for details."
+                        "switching to CPU. "
+                        f"Details: {_directml_error_summary(runtime_error)}"
                     ),
                     NAME,
                 )
@@ -265,7 +277,8 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 update_status(
                     (
                         "DirectML face enhancement failed during inference, "
-                        "switching to CPU. See logs for details."
+                        "switching to CPU. "
+                        f"Details: {_directml_error_summary(unexpected_error)}"
                     ),
                     NAME,
                 )
