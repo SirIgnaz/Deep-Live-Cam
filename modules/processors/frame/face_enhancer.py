@@ -107,7 +107,16 @@ def _force_cpu_face_enhancer(
     DIRECTML_FACE_ENHANCER_FORCED_CPU = True
 
     if message:
-        update_status(message, NAME)
+        update_status(
+            (
+                f"{message}"
+                "\nContinuing with CPU fallback; this can be significantly slower, "
+                "especially on high-resolution videos. The interface may look"
+                " idle while the CPU works through each frame, but progress"
+                " updates will resume once the first frame finishes."
+            ),
+            NAME,
+        )
 
     return torch.device("cpu")
 
