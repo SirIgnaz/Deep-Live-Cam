@@ -139,6 +139,15 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
 
     normalized_execution_providers: List[str] = []
     for execution_provider in execution_providers:
+        aliases = provider_aliases.get(execution_provider, [execution_provider])
+        normalized_execution_providers.extend(aliases)
+
+    # remove duplicates while preserving order
+    deduplicated_providers: List[str] = []
+    for provider in normalized_execution_providers:
+        if provider not in deduplicated_providers:
+            deduplicated_providers.append(provider)
+    normalized_execution_providers = deduplicated_providers
         normalized_execution_providers.extend(
             provider_aliases.get(execution_provider, [execution_provider])
         )
@@ -150,6 +159,7 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
         for provider in normalized_execution_providers
         if not (provider in seen or seen.add(provider))
     ]
+main
 
     available_providers = onnxruntime.get_available_providers()
     encoded_providers = encode_execution_providers(available_providers)
@@ -171,6 +181,7 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
         decoded.append('CPUExecutionProvider')
 
     if not decoded and normalized_execution_providers and cpu_available:
+
         normalized_execution_providers.extend(provider_aliases.get(execution_provider, [execution_provider]))
 
     # remove duplicates while preserving order
