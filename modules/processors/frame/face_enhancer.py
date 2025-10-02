@@ -83,8 +83,22 @@ def get_face_enhancer() -> Any:
                 'DmlExecutionProvider' in modules.globals.execution_providers
                 and TORCH_DIRECTML_AVAILABLE
             ):
-                selected_device = DIRECTML_DEVICE
-                device_priority.append("DirectML")
+                # GFPGAN currently fails with a dtype mismatch when executed on
+                # DirectML (`privateuseone` tensors).  Until upstream support is
+                # available we run the face enhancer on CPU to keep the
+                # application stable instead of crashing halfway through a
+                # run.  This mirrors the behaviour of the DirectML fallback
+                # below, but provides the user with explicit feedback so they
+                # know why GPU acceleration is not used here.
+                update_status(
+                    (
+                        "DirectML is not supported for the face enhancer yet. "
+                        "Falling back to CPU."
+                    ),
+                    NAME,
+                )
+                selected_device = torch.device("cpu")
+                device_priority.extend(["DirectML", "CPU"])
             elif (
                 'DmlExecutionProvider' in modules.globals.execution_providers
                 and not TORCH_DIRECTML_AVAILABLE
