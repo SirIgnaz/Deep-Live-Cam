@@ -83,22 +83,8 @@ def get_face_enhancer() -> Any:
                 'DmlExecutionProvider' in modules.globals.execution_providers
                 and TORCH_DIRECTML_AVAILABLE
             ):
-                # GFPGAN currently fails with a dtype mismatch when executed on
-                # DirectML (`privateuseone` tensors).  Until upstream support is
-                # available we run the face enhancer on CPU to keep the
-                # application stable instead of crashing halfway through a
-                # run.  This mirrors the behaviour of the DirectML fallback
-                # below, but provides the user with explicit feedback so they
-                # know why GPU acceleration is not used here.
-                update_status(
-                    (
-                        "DirectML is not supported for the face enhancer yet. "
-                        "Falling back to CPU."
-                    ),
-                    NAME,
-                )
-                selected_device = torch.device("cpu")
-                device_priority.extend(["DirectML", "CPU"])
+                selected_device = DIRECTML_DEVICE
+                device_priority.append("DirectML")
             elif (
                 'DmlExecutionProvider' in modules.globals.execution_providers
                 and not TORCH_DIRECTML_AVAILABLE
@@ -122,7 +108,30 @@ def get_face_enhancer() -> Any:
                 selected_device = torch.device("cpu")
                 device_priority.append("CPU")
             
-            FACE_ENHANCER = gfpgan.GFPGANer(model_path=model_path, upscale=1, device=selected_device)
+            try:
+                FACE_ENHANCER = gfpgan.GFPGANer(
+                    model_path=model_path, upscale=1, device=selected_device
+                )
+            except Exception as directml_error:
+                if selected_device is DIRECTML_DEVICE:
+                    update_status(
+                        (
+                            "DirectML face enhancement failed, switching to CPU. "
+                            "See logs for details."
+                        ),
+                        NAME,
+                    )
+                    print(
+                        "DirectML initialisation for GFPGAN failed; "
+                        f"falling back to CPU: {directml_error}"
+                    )
+                    selected_device = torch.device("cpu")
+                    device_priority.append("CPU")
+                    FACE_ENHANCER = gfpgan.GFPGANer(
+                        model_path=model_path, upscale=1, device=selected_device
+                    )
+                else:
+                    raise
 
             # for debug:
             print(f"Selected device: {selected_device} and device priority: {device_priority}")
