@@ -101,7 +101,17 @@ class GfpganTorchBackend(FaceEnhancerBackend):
 
 
 class CodeFormerOnnxBackend(FaceEnhancerBackend):
-    """Face enhancement backend powered by a CodeFormer ONNX model."""
+    """Face enhancement backend powered by a CodeFormer ONNX model.
+
+    The backend uses a radial mask when compositing the restored face back into
+    the frame.  The mask is generated from a normalized distance field so that
+    the center of the face keeps a weight close to ``1`` while the values fade
+    smoothly towards the borders.  ``mask_blur`` controls the Gaussian kernel
+    applied to the mask, producing a soft elliptical feather that works for both
+    ROI overlays and affine warps.  Empirically a kernel size around ``45``
+    yielded a natural-looking transition while still keeping the restored facial
+    details crisp.
+    """
 
     def __init__(
         self,
@@ -109,7 +119,7 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         fidelity: float = 0.7,
         input_size: int = 512,
         face_padding: float = 0.1,
-        mask_blur: int = 21,
+        mask_blur: int = 45,
     ) -> None:
         if ort is None:
             raise RuntimeError("onnxruntime is required for CodeFormerOnnxBackend")
@@ -122,7 +132,7 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         self.fidelity = float(np.clip(fidelity, 0.0, 1.0))
         self.input_size = int(max(32, input_size))
         self.face_padding = max(0.0, float(face_padding))
-        self.mask_blur = int(max(0, mask_blur))
+        self.mask_blur = int(max(0, mask_blur))  # 45 keeps the mask feather gentle by default.
 
         inputs = session.get_inputs()
         if not inputs:
@@ -215,14 +225,28 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         return x1, y1, x2, y2
 
     def _create_mask(self, height: int, width: int) -> np.ndarray:
-        mask = np.ones((height, width), dtype=np.float32)
+        """Create a smooth elliptical mask that fades towards the edges."""
+
+        y = np.linspace(-1.0, 1.0, height, dtype=np.float32)
+        x = np.linspace(-1.0, 1.0, width, dtype=np.float32)
+        yy, xx = np.meshgrid(y, x, indexing="ij")
+        distance = np.sqrt(xx**2 + yy**2)
+
+        mask = np.clip(1.0 - distance, 0.0, 1.0)
+        mask = mask**2
+
         if self.mask_blur > 0:
             kernel = max(1, self.mask_blur)
             if kernel % 2 == 0:
                 kernel += 1
             mask = cv2.GaussianBlur(mask, (kernel, kernel), 0)
-        mask = mask[..., None]
-        return mask
+
+        mask = np.clip(mask, 0.0, 1.0)
+        max_value = float(mask.max())
+        if max_value > 0:
+            mask /= max_value
+
+        return mask[..., None]
 
     # ------------------------------------------------------------------
     # Public API
@@ -294,11 +318,6 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
                     borderValue=0,
                 )
                 mask = np.clip(mask, 0.0, 1.0)
-                if self.mask_blur > 0:
-                    kernel = max(1, self.mask_blur)
-                    if kernel % 2 == 0:
-                        kernel += 1
-                    mask = cv2.GaussianBlur(mask, (kernel, kernel), 0)
                 mask = mask[..., None]
 
                 blended = (
