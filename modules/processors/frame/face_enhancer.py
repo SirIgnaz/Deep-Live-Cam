@@ -176,9 +176,16 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
             return _initialise_face_enhancer(torch.device("cpu"))
         raise
 
-    print(
-        f"Selected device: {selected_device} and device priority: {device_priority}"
-    )
+    device_label = _device_name(selected_device)
+    if str(selected_device).upper() != device_label:
+        print(
+            "Selected device: "
+            f"{device_label} ({selected_device}) and device priority: {device_priority}"
+        )
+    else:
+        print(
+            f"Selected device: {device_label} and device priority: {device_priority}"
+        )
     return FACE_ENHANCER
 
 
