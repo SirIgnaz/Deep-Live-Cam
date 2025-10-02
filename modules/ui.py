@@ -90,6 +90,12 @@ def init(start: Callable[[], None], destroy: Callable[[], None], lang: str) -> c
     return ROOT
 
 
+def _update_directml_face_enhancer_override(enabled: bool) -> None:
+    from modules.processors.frame import face_enhancer as face_enhancer_module
+
+    face_enhancer_module.set_directml_face_enhancer_override(enabled)
+
+
 def save_switch_states():
     switch_states = {
         "keep_fps": modules.globals.keep_fps,
@@ -98,6 +104,7 @@ def save_switch_states():
         "many_faces": modules.globals.many_faces,
         "map_faces": modules.globals.map_faces,
         "color_correction": modules.globals.color_correction,
+        "allow_directml_face_enhancer": modules.globals.allow_directml_face_enhancer,
         "nsfw_filter": modules.globals.nsfw_filter,
         "live_mirror": modules.globals.live_mirror,
         "live_resizable": modules.globals.live_resizable,
@@ -120,6 +127,10 @@ def load_switch_states():
         modules.globals.many_faces = switch_states.get("many_faces", False)
         modules.globals.map_faces = switch_states.get("map_faces", False)
         modules.globals.color_correction = switch_states.get("color_correction", False)
+        modules.globals.allow_directml_face_enhancer = switch_states.get(
+            "allow_directml_face_enhancer",
+            modules.globals.allow_directml_face_enhancer,
+        )
         modules.globals.nsfw_filter = switch_states.get("nsfw_filter", False)
         modules.globals.live_mirror = switch_states.get("live_mirror", False)
         modules.globals.live_resizable = switch_states.get("live_resizable", False)
@@ -361,6 +372,21 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     )
     color_correction_switch.grid(row=2, column=0, sticky="ew", pady=12)
 
+    directml_face_enhancer_value = ctk.BooleanVar(
+        value=modules.globals.allow_directml_face_enhancer
+    )
+    directml_face_enhancer_switch = ctk.CTkSwitch(
+        right_option_column,
+        text=_("Force DirectML Face Enhance"),
+        variable=directml_face_enhancer_value,
+        cursor="hand2",
+        command=lambda: (
+            _update_directml_face_enhancer_override(directml_face_enhancer_value.get()),
+            save_switch_states(),
+        ),
+    )
+    directml_face_enhancer_switch.grid(row=3, column=0, sticky="ew", pady=12)
+
     show_fps_value = ctk.BooleanVar(value=modules.globals.show_fps)
     show_fps_switch = ctk.CTkSwitch(
         right_option_column,
@@ -372,7 +398,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_fps_switch.grid(row=3, column=0, sticky="ew", pady=12)
+    show_fps_switch.grid(row=4, column=0, sticky="ew", pady=12)
 
     show_mouth_mask_box_var = ctk.BooleanVar(value=modules.globals.show_mouth_mask_box)
     show_mouth_mask_box_switch = ctk.CTkSwitch(
@@ -389,7 +415,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_mouth_mask_box_switch.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+    show_mouth_mask_box_switch.grid(row=5, column=0, sticky="ew", pady=(12, 0))
 
     cta_frame = ctk.CTkFrame(content, fg_color="transparent")
     cta_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))

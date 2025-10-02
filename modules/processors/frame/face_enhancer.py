@@ -45,12 +45,6 @@ abs_dir = os.path.dirname(os.path.abspath(__file__))
 models_dir = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(abs_dir))), "models"
 )
-ALLOW_DIRECTML_FACE_ENHANCER = (
-    os.environ.get("DLC_ALLOW_DIRECTML_FACE_ENHANCER", "").strip().lower()
-    in ("1", "true", "yes", "on")
-)
-
-
 def pre_check() -> bool:
     download_directory_path = models_dir
     conditional_download(
@@ -99,6 +93,31 @@ def _directml_error_summary(error: Exception) -> str:
     return message
 
 
+def _allow_directml_face_enhancer() -> bool:
+    env_value = os.environ.get("DLC_ALLOW_DIRECTML_FACE_ENHANCER", "").strip().lower()
+    env_enabled = env_value in ("1", "true", "yes", "on")
+    return bool(modules.globals.allow_directml_face_enhancer or env_enabled)
+
+
+def set_directml_face_enhancer_override(enabled: bool) -> None:
+    """Persist the override flag and reset cached enhancer state."""
+
+    modules.globals.allow_directml_face_enhancer = enabled
+
+    if enabled:
+        os.environ["DLC_ALLOW_DIRECTML_FACE_ENHANCER"] = "1"
+    else:
+        os.environ.pop("DLC_ALLOW_DIRECTML_FACE_ENHANCER", None)
+
+    global DIRECTML_FACE_ENHANCER_DISABLED, DIRECTML_FACE_ENHANCER_FORCED_CPU
+    DIRECTML_FACE_ENHANCER_DISABLED = False
+    DIRECTML_FACE_ENHANCER_FORCED_CPU = False
+
+    global FACE_ENHANCER, FACE_ENHANCER_DEVICE
+    FACE_ENHANCER = None
+    FACE_ENHANCER_DEVICE = None
+
+
 def _force_cpu_face_enhancer(
     message: Optional[str] = None, mark_disabled: bool = False
 ) -> torch.device:
@@ -124,6 +143,20 @@ def _force_cpu_face_enhancer(
         )
 
     return torch.device("cpu")
+
+
+def _directml_override_hint() -> str:
+    """Provide additional guidance when a forced DirectML run still fails."""
+
+    if not _allow_directml_face_enhancer():
+        return ""
+
+    return (
+        "\nDirectML override is active, but GFPGAN cannot execute on the "
+        "current torch-directml build due to incompatible tensor types. "
+        "Remove DLC_ALLOW_DIRECTML_FACE_ENHANCER or upgrade to a torch-directml "
+        "release that fixes the mismatch to avoid this fallback."
+    )
 
 
 def _initialise_face_enhancer(
@@ -161,7 +194,7 @@ def _initialise_face_enhancer(
             and TORCH_DIRECTML_AVAILABLE
             and not DIRECTML_FACE_ENHANCER_DISABLED
         ):
-            if not ALLOW_DIRECTML_FACE_ENHANCER:
+            if not _allow_directml_face_enhancer():
                 if not DIRECTML_FACE_ENHANCER_FORCED_CPU:
                     selected_device = _force_cpu_face_enhancer(
                         (
@@ -232,6 +265,7 @@ def _initialise_face_enhancer(
                 (
                     "DirectML face enhancement failed, switching to CPU. "
                     f"Details: {_directml_error_summary(directml_error)}"
+                    f"{_directml_override_hint()}"
                 ),
                 NAME,
             )
@@ -301,6 +335,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )
@@ -322,6 +357,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(runtime_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )
@@ -346,6 +382,7 @@ def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
                         "DirectML face enhancement failed during inference, "
                         "switching to CPU. "
                         f"Details: {_directml_error_summary(unexpected_error)}"
+                        f"{_directml_override_hint()}"
                     ),
                     mark_disabled=True,
                 )

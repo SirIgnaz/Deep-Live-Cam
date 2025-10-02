@@ -101,7 +101,24 @@ class GfpganTorchBackend(FaceEnhancerBackend):
 
 
 class CodeFormerOnnxBackend(FaceEnhancerBackend):
-    """Face enhancement backend powered by a CodeFormer ONNX model."""
+    """Face enhancement backend powered by a CodeFormer ONNX model.
+
+    The backend uses a radial mask when compositing the restored face back into
+    the frame.  The mask is generated from a normalized distance field so that
+    the center of the face keeps a weight close to ``1`` while the values fade
+    smoothly towards the borders.  ``mask_blur`` controls the Gaussian kernel
+    applied to the mask, producing a soft elliptical feather that works for both
+    ROI overlays and affine warps.  Empirically a kernel size around ``45``
+    yielded a natural-looking transition while still keeping the restored facial
+    details crisp.
+
+    Before the alpha compositing step the backend optionally performs a simple
+    colour transfer between the restored face and the destination region.
+    Matching the first two Lab channel moments keeps the tonal values close to
+    the surrounding frame and avoids sudden luminance jumps.  The behaviour can
+    be tuned through ``color_correction_strength`` where ``0`` disables the
+    adjustment and ``1`` applies the full transfer.
+    """
 
     def __init__(
         self,
@@ -109,7 +126,8 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         fidelity: float = 0.7,
         input_size: int = 512,
         face_padding: float = 0.1,
-        mask_blur: int = 21,
+        mask_blur: int = 45,
+        color_correction_strength: float = 1.0,
     ) -> None:
         if ort is None:
             raise RuntimeError("onnxruntime is required for CodeFormerOnnxBackend")
@@ -122,7 +140,8 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         self.fidelity = float(np.clip(fidelity, 0.0, 1.0))
         self.input_size = int(max(32, input_size))
         self.face_padding = max(0.0, float(face_padding))
-        self.mask_blur = int(max(0, mask_blur))
+        self.mask_blur = int(max(0, mask_blur))  # 45 keeps the mask feather gentle by default.
+        self.color_correction_strength = float(np.clip(color_correction_strength, 0.0, 1.0))
 
         inputs = session.get_inputs()
         if not inputs:
@@ -215,14 +234,75 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         return x1, y1, x2, y2
 
     def _create_mask(self, height: int, width: int) -> np.ndarray:
-        mask = np.ones((height, width), dtype=np.float32)
+        """Create a smooth elliptical mask that fades towards the edges."""
+
+        y = np.linspace(-1.0, 1.0, height, dtype=np.float32)
+        x = np.linspace(-1.0, 1.0, width, dtype=np.float32)
+        yy, xx = np.meshgrid(y, x, indexing="ij")
+        distance = np.sqrt(xx**2 + yy**2)
+
+        mask = np.clip(1.0 - distance, 0.0, 1.0)
+        mask = mask**2
+
         if self.mask_blur > 0:
             kernel = max(1, self.mask_blur)
             if kernel % 2 == 0:
                 kernel += 1
             mask = cv2.GaussianBlur(mask, (kernel, kernel), 0)
-        mask = mask[..., None]
-        return mask
+
+        mask = np.clip(mask, 0.0, 1.0)
+        max_value = float(mask.max())
+        if max_value > 0:
+            mask /= max_value
+
+        return mask[..., None]
+
+    def _match_color(
+        self,
+        source: np.ndarray,
+        reference: np.ndarray,
+        mask: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """Match ``source`` colour statistics to ``reference`` using Lab moments."""
+
+        if self.color_correction_strength <= 0.0:
+            return source
+
+        if mask is None:
+            weights = np.ones(source.shape[:2], dtype=np.float32)
+        else:
+            weights = mask.astype(np.float32)
+            if weights.ndim == 3:
+                weights = weights[..., 0]
+
+        total_weight = float(weights.sum())
+        if total_weight <= 1e-6:
+            return source
+
+        src_lab = cv2.cvtColor(source, cv2.COLOR_BGR2LAB).astype(np.float32)
+        ref_lab = cv2.cvtColor(reference, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+        weights_flat = weights.reshape(-1, 1)
+        src_flat = src_lab.reshape(-1, 3)
+        ref_flat = ref_lab.reshape(-1, 3)
+
+        src_mean = (src_flat * weights_flat).sum(axis=0) / total_weight
+        ref_mean = (ref_flat * weights_flat).sum(axis=0) / total_weight
+
+        src_var = (weights_flat * (src_flat - src_mean) ** 2).sum(axis=0) / total_weight
+        ref_var = (weights_flat * (ref_flat - ref_mean) ** 2).sum(axis=0) / total_weight
+
+        src_std = np.sqrt(np.maximum(src_var, 1e-6))
+        ref_std = np.sqrt(np.maximum(ref_var, 1e-6))
+
+        adjusted_flat = ((src_flat - src_mean) / src_std) * ref_std + ref_mean
+        adjusted_lab = adjusted_flat.reshape(src_lab.shape)
+
+        strength = self.color_correction_strength
+        corrected_lab = src_lab + strength * (adjusted_lab - src_lab)
+
+        corrected_bgr = cv2.cvtColor(np.clip(corrected_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+        return corrected_bgr
 
     # ------------------------------------------------------------------
     # Public API
@@ -285,25 +365,23 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
                     flags=cv2.INTER_LINEAR,
                     borderMode=cv2.BORDER_REFLECT,
                 )
+                base_mask = self._create_mask(self.input_size, self.input_size).squeeze(-1)
                 mask = cv2.warpAffine(
-                    self._create_mask(self.input_size, self.input_size).squeeze(-1),
+                    base_mask,
                     inverse_affine,
                     (frame_width, frame_height),
                     flags=cv2.INTER_LINEAR,
                     borderMode=cv2.BORDER_CONSTANT,
                     borderValue=0,
                 )
-                mask = np.clip(mask, 0.0, 1.0)
-                if self.mask_blur > 0:
-                    kernel = max(1, self.mask_blur)
-                    if kernel % 2 == 0:
-                        kernel += 1
-                    mask = cv2.GaussianBlur(mask, (kernel, kernel), 0)
-                mask = mask[..., None]
+                mask = np.clip(mask, 0.0, 1.0).astype(np.float32)
+                corrected_canvas = self._match_color(canvas, output_frame, mask)
+                mask_3c = mask[..., None]
+                inv_mask_3c = np.float32(1.0) - mask_3c
 
                 blended = (
-                    canvas.astype(np.float32) * mask
-                    + output_frame.astype(np.float32) * (1.0 - mask)
+                    corrected_canvas.astype(np.float32) * mask_3c
+                    + output_frame.astype(np.float32) * inv_mask_3c
                 )
                 output_frame = np.clip(blended, 0, 255).astype(np.uint8)
             else:
@@ -313,10 +391,14 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
                     interpolation=cv2.INTER_LINEAR,
                 )
                 mask = self._create_mask(y2 - y1, x2 - x1)
-                base_region = output_frame[y1:y2, x1:x2].astype(np.float32)
+                base_region = output_frame[y1:y2, x1:x2]
+                corrected_face = self._match_color(resized_face, base_region, mask)
+                base_region_float = base_region.astype(np.float32)
+                mask_float = mask.astype(np.float32)
+                inv_mask = np.float32(1.0) - mask_float
                 blended = (
-                    resized_face.astype(np.float32) * mask
-                    + base_region * (1.0 - mask)
+                    corrected_face.astype(np.float32) * mask_float
+                    + base_region_float * inv_mask
                 )
                 output_frame[y1:y2, x1:x2] = np.clip(blended, 0, 255).astype(np.uint8)
 
