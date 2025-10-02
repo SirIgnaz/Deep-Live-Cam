@@ -11,6 +11,16 @@ from modules.face_analyser import get_one_face
 from modules.typing import Frame, Face
 import platform
 import torch
+
+TORCH_DIRECTML_AVAILABLE = False
+DIRECTML_DEVICE = None
+try:
+    import torch_directml
+
+    DIRECTML_DEVICE = torch_directml.device()
+    TORCH_DIRECTML_AVAILABLE = True
+except ImportError:
+    pass
 from modules.utilities import (
     conditional_download,
     is_image,
@@ -69,7 +79,23 @@ def get_face_enhancer() -> Any:
             selected_device = None
             device_priority = []
 
-            if TENSORRT_AVAILABLE and torch.cuda.is_available():
+            if (
+                'DmlExecutionProvider' in modules.globals.execution_providers
+                and TORCH_DIRECTML_AVAILABLE
+            ):
+                selected_device = DIRECTML_DEVICE
+                device_priority.append("DirectML")
+            elif (
+                'DmlExecutionProvider' in modules.globals.execution_providers
+                and not TORCH_DIRECTML_AVAILABLE
+            ):
+                update_status(
+                    "torch-directml not found. Falling back to CPU for face enhancer.",
+                    NAME,
+                )
+                selected_device = torch.device("cpu")
+                device_priority.append("CPU")
+            elif TENSORRT_AVAILABLE and torch.cuda.is_available():
                 selected_device = torch.device("cuda")
                 device_priority.append("TensorRT+CUDA")
             elif torch.cuda.is_available():
