@@ -5,6 +5,7 @@ import gfpgan
 import os
 
 from modules.processors.frame.face_enhancer_backends import (
+    CodeFormerOnnxBackend,
     FaceEnhancerBackend,
     GfpganTorchBackend,
 )
@@ -118,6 +119,15 @@ def set_directml_face_enhancer_override(enabled: bool) -> None:
     FACE_ENHANCER_DEVICE = None
 
 
+def update_codeformer_preferences(mask_blur: int, color_strength: float) -> None:
+    """Push UI preferences to the active CodeFormer backend when available."""
+
+    enhancer = FACE_ENHANCER
+    if isinstance(enhancer, CodeFormerOnnxBackend):
+        enhancer.set_mask_blur(mask_blur)
+        enhancer.set_color_correction_strength(color_strength)
+
+
 def _force_cpu_face_enhancer(
     message: Optional[str] = None, mark_disabled: bool = False
 ) -> torch.device:
@@ -149,7 +159,6 @@ def _directml_override_hint() -> str:
     """Provide additional guidance when a forced DirectML run still fails."""
 
     if not _allow_directml_face_enhancer():
-    if not ALLOW_DIRECTML_FACE_ENHANCER:
         return ""
 
     return (

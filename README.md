@@ -297,6 +297,11 @@ python run.py --execution-provider amd
     If you still encounter a tensor type mismatch after enabling the override,
     the installed torch-directml build does not support GFPGAN and the backend
     will continue on the CPU.
+-   The DirectML face enhancer offers two tuning controls next to the toggle:
+    **Mask blur** (controls how soft the CodeFormer blending mask is) and
+    **Color match strength** (controls how strongly colours are matched to the
+    destination frame). Lower blur values keep sharper seams, while reducing
+    colour strength preserves more of the original lighting.
 
 **OpenVINO™ Execution Provider (Intel)**
 
