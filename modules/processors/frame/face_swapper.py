@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional, Tuple
 import cv2
 import insightface
 import threading
@@ -72,21 +72,131 @@ def get_face_swapper() -> Any:
     return FACE_SWAPPER
 
 
+def get_mask_center(mask: np.ndarray) -> Tuple[int, int]:
+    non_zero_points = cv2.findNonZero(mask)
+    if non_zero_points is None:
+        return mask.shape[1] // 2, mask.shape[0] // 2
+    mean_point = np.mean(non_zero_points, axis=0)[0]
+    return int(mean_point[0]), int(mean_point[1])
+
+
+def get_face_center(face: Face, frame_shape: Tuple[int, int]) -> Tuple[int, int]:
+    bbox = getattr(face, "bbox", None)
+    if bbox is not None:
+        bbox = np.array(bbox).astype(float)
+        x_center = int((bbox[0] + bbox[2]) / 2)
+        y_center = int((bbox[1] + bbox[3]) / 2)
+        return x_center, y_center
+
+    landmarks = face.landmark_2d_106
+    if landmarks is not None:
+        center = np.mean(landmarks, axis=0)
+        return int(center[0]), int(center[1])
+
+    height, width = frame_shape
+    return width // 2, height // 2
+
+
+def build_blending_masks(
+    target_face: Face, frame: Frame, face_mask: np.ndarray
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    if face_mask is None or not np.any(face_mask):
+        return None, None
+
+    mask = face_mask.copy()
+
+    bbox = getattr(target_face, "bbox", None)
+    if bbox is not None:
+        bbox = np.array(bbox).astype(float)
+        face_width = max(1.0, float(bbox[2] - bbox[0]))
+        face_height = max(1.0, float(bbox[3] - bbox[1]))
+    else:
+        face_height, face_width = frame.shape[:2]
+        face_width *= 0.4
+        face_height *= 0.4
+
+    face_size = max(face_width, face_height)
+    dilation = max(3, int(face_size * 0.05))
+    kernel_size = dilation + 1 if dilation % 2 == 0 else dilation
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
+    )
+
+    dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+    soft_mask = cv2.GaussianBlur(
+        dilated_mask, (0, 0), sigmaX=max(3.0, kernel_size * 0.5)
+    )
+    soft_mask = cv2.normalize(soft_mask, None, 0, 255, cv2.NORM_MINMAX)
+
+    _, clone_mask = cv2.threshold(
+        dilated_mask.astype(np.uint8), 10, 255, cv2.THRESH_BINARY
+    )
+
+    if not np.any(clone_mask):
+        clone_mask = None
+
+    return soft_mask.astype(np.uint8), clone_mask
+
+
+def blend_swapped_face(
+    swapped_frame: Frame,
+    base_frame: Frame,
+    target_face: Face,
+    soft_mask: Optional[np.ndarray],
+    clone_mask: Optional[np.ndarray],
+) -> Frame:
+    blended_frame = swapped_frame
+
+    if clone_mask is not None:
+        center = get_mask_center(clone_mask)
+    else:
+        center = get_face_center(target_face, base_frame.shape[:2])
+
+    if clone_mask is not None:
+        try:
+            blended_frame = cv2.seamlessClone(
+                swapped_frame, base_frame, clone_mask, center, cv2.MIXED_CLONE
+            )
+        except cv2.error:
+            blended_frame = swapped_frame
+
+    if soft_mask is not None and np.max(soft_mask) > 0:
+        mask_normalized = soft_mask.astype(np.float32) / 255.0
+        mask_3channel = np.repeat(mask_normalized[:, :, np.newaxis], 3, axis=2)
+
+        blended_frame = (
+            blended_frame.astype(np.float32) * mask_3channel
+            + base_frame.astype(np.float32) * (1.0 - mask_3channel)
+        )
+        blended_frame = np.clip(blended_frame, 0, 255).astype(np.uint8)
+
+    return blended_frame
+
+
 def swap_face(source_face: Face, target_face: Face, temp_frame: Frame) -> Frame:
     face_swapper = get_face_swapper()
+    base_frame = temp_frame.copy()
+
+    face_mask = create_face_mask(target_face, base_frame)
+    soft_mask, clone_mask = build_blending_masks(target_face, base_frame, face_mask)
 
     # Apply the face swap
     swapped_frame = face_swapper.get(
         temp_frame, target_face, source_face, paste_back=True
     )
 
-    if modules.globals.mouth_mask:
-        # Create a mask for the target face
-        face_mask = create_face_mask(target_face, temp_frame)
+    swapped_frame = blend_swapped_face(
+        swapped_frame, base_frame, target_face, soft_mask, clone_mask
+    )
 
+    if (
+        modules.globals.mouth_mask
+        and face_mask is not None
+        and np.any(face_mask)
+    ):
         # Create the mouth mask
         mouth_mask, mouth_cutout, mouth_box, lower_lip_polygon = (
-            create_lower_mouth_mask(target_face, temp_frame)
+            create_lower_mouth_mask(target_face, base_frame)
         )
 
         # Apply the mouth area
