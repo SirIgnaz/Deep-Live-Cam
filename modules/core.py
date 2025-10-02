@@ -102,8 +102,8 @@ def parse_args() -> None:
         print('\033[33mArgument --gpu-vendor nvidia is deprecated. Use --execution-provider cuda instead.\033[0m')
         modules.globals.execution_providers = decode_execution_providers(['cuda'])
     if args.gpu_vendor_deprecated == 'amd':
-        print('\033[33mArgument --gpu-vendor amd is deprecated. Use --execution-provider cuda instead.\033[0m')
-        modules.globals.execution_providers = decode_execution_providers(['rocm'])
+        print('\033[33mArgument --gpu-vendor amd is deprecated. Use --execution-provider amd instead.\033[0m')
+        modules.globals.execution_providers = decode_execution_providers(['amd'])
     if args.gpu_threads_deprecated:
         print('\033[33mArgument --gpu-threads is deprecated. Use --execution-threads instead.\033[0m')
         modules.globals.execution_threads = args.gpu_threads_deprecated
@@ -114,8 +114,32 @@ def encode_execution_providers(execution_providers: List[str]) -> List[str]:
 
 
 def decode_execution_providers(execution_providers: List[str]) -> List[str]:
-    return [provider for provider, encoded_execution_provider in zip(onnxruntime.get_available_providers(), encode_execution_providers(onnxruntime.get_available_providers()))
-            if any(execution_provider in encoded_execution_provider for execution_provider in execution_providers)]
+    provider_aliases = {
+        'directml': ['dml'],
+        'amd': ['dml', 'rocm'],
+    }
+
+    normalized_execution_providers: List[str] = []
+    for execution_provider in execution_providers:
+        normalized_execution_providers.extend(provider_aliases.get(execution_provider, [execution_provider]))
+
+    # remove duplicates while preserving order
+    seen = set()
+    normalized_execution_providers = [provider for provider in normalized_execution_providers if not (provider in seen or seen.add(provider))]
+
+    available_providers = onnxruntime.get_available_providers()
+    encoded_providers = encode_execution_providers(available_providers)
+    decoded = [
+        provider
+        for provider, encoded_provider in zip(available_providers, encoded_providers)
+        if any(normalized_provider in encoded_provider for normalized_provider in normalized_execution_providers)
+    ]
+
+    if not decoded and normalized_execution_providers and 'CPUExecutionProvider' in available_providers:
+        print('\033[33mRequested execution provider is not available. Falling back to CPU.\033[0m')
+        decoded = ['CPUExecutionProvider']
+
+    return decoded
 
 
 def suggest_max_memory() -> int:
@@ -125,7 +149,17 @@ def suggest_max_memory() -> int:
 
 
 def suggest_execution_providers() -> List[str]:
-    return encode_execution_providers(onnxruntime.get_available_providers())
+    providers = encode_execution_providers(onnxruntime.get_available_providers())
+
+    if 'dml' in providers and 'directml' not in providers:
+        providers.append('directml')
+
+    if 'rocm' in providers and 'amd' not in providers:
+        providers.append('amd')
+    elif 'dml' in providers and 'amd' not in providers:
+        providers.append('amd')
+
+    return providers
 
 
 def suggest_execution_threads() -> int:
