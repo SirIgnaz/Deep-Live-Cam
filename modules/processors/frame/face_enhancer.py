@@ -228,6 +228,47 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 FACE_ENHANCER = None
                 enhancer = get_face_enhancer(torch.device("cpu"))
                 _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+            elif (
+                TORCH_DIRECTML_AVAILABLE
+                and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
+            ):
+                DIRECTML_FACE_ENHANCER_DISABLED = True
+                update_status(
+                    (
+                        "DirectML face enhancement failed during inference, "
+                        "switching to CPU. See logs for details."
+                    ),
+                    NAME,
+                )
+                print(
+                    "DirectML inference for GFPGAN failed; "
+                    f"falling back to CPU: {runtime_error}"
+                )
+                FACE_ENHANCER = None
+                enhancer = get_face_enhancer(torch.device("cpu"))
+                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+            else:
+                raise
+        except Exception as unexpected_error:
+            if (
+                TORCH_DIRECTML_AVAILABLE
+                and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
+            ):
+                DIRECTML_FACE_ENHANCER_DISABLED = True
+                update_status(
+                    (
+                        "DirectML face enhancement failed during inference, "
+                        "switching to CPU. See logs for details."
+                    ),
+                    NAME,
+                )
+                print(
+                    "DirectML inference for GFPGAN encountered an unexpected error; "
+                    f"falling back to CPU: {unexpected_error}"
+                )
+                FACE_ENHANCER = None
+                enhancer = get_face_enhancer(torch.device("cpu"))
+                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
             else:
                 raise
     return temp_frame
