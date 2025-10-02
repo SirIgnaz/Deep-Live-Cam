@@ -287,6 +287,15 @@ python run.py --execution-provider amd
     appear to "hang" on high-resolution media because CPU inference is
     significantly slower—the UI may seem idle until the first frame completes.
     Set the environment variable
+    `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the experimental DirectML
+    path if you want to try GPU acceleration instead.
+-   You can now switch the face enhancer backend at runtime. For AMD/DirectML
+    workflows that should stay on the GPU, run with
+    `--face-enhancer-backend codeformer-onnx` (or set
+    `DLC_FACE_ENHANCER_BACKEND=codeformer-onnx`). The first launch will download
+    the CodeFormer ONNX weights automatically, and inference uses the DirectML
+    execution provider when available.
+
     significantly slower. Set the environment variable
     `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the experimental DirectML
     path if you want to try GPU acceleration instead.
@@ -315,6 +324,9 @@ python run.py --execution-provider openvino
 -   Choose a source face image and a target image/video.
 -   Click "Start".
 -   The output will be saved in a directory named after the target video.
+-   Optional: choose an alternative face enhancer backend via
+    `--face-enhancer-backend` (for example, `codeformer-onnx` for DirectML GPU
+    inference).
 
 **2. Webcam Mode**
 

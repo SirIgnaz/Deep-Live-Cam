@@ -19,6 +19,10 @@ import modules.globals
 import modules.metadata
 import modules.ui as ui
 from modules.processors.frame.core import get_frame_processors_modules
+from modules.processors.frame.face_enhancer_backends import (
+    AVAILABLE_FACE_ENHANCER_BACKENDS,
+    DEFAULT_FACE_ENHANCER_BACKEND,
+)
 from modules.utilities import has_image_extension, is_image, is_video, detect_fps, create_video, extract_frames, get_temp_frame_paths, restore_audio, create_temp, move_temp, clean_temp, normalize_output_path
 
 if 'ROCMExecutionProvider' in modules.globals.execution_providers:
@@ -35,6 +39,14 @@ def parse_args() -> None:
     program.add_argument('-t', '--target', help='select an target image or video', dest='target_path')
     program.add_argument('-o', '--output', help='select output file or directory', dest='output_path')
     program.add_argument('--frame-processor', help='pipeline of frame processors', dest='frame_processor', default=['face_swapper'], choices=['face_swapper', 'face_enhancer'], nargs='+')
+    backend_choices = sorted(AVAILABLE_FACE_ENHANCER_BACKENDS.keys())
+    program.add_argument(
+        '--face-enhancer-backend',
+        help='implementation used for face enhancement',
+        dest='face_enhancer_backend',
+        default=DEFAULT_FACE_ENHANCER_BACKEND,
+        choices=backend_choices,
+    )
     program.add_argument('--keep-fps', help='keep original fps', dest='keep_fps', action='store_true', default=False)
     program.add_argument('--keep-audio', help='keep original audio', dest='keep_audio', action='store_true', default=True)
     program.add_argument('--keep-frames', help='keep temporary frames', dest='keep_frames', action='store_true', default=False)
@@ -64,6 +76,7 @@ def parse_args() -> None:
     modules.globals.target_path = args.target_path
     modules.globals.output_path = normalize_output_path(modules.globals.source_path, modules.globals.target_path, args.output_path)
     modules.globals.frame_processors = args.frame_processor
+    modules.globals.face_enhancer_backend = args.face_enhancer_backend
     modules.globals.headless = args.source_path or args.target_path or args.output_path
     modules.globals.keep_fps = args.keep_fps
     modules.globals.keep_audio = args.keep_audio

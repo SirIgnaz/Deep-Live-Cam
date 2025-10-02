@@ -1,7 +1,6 @@
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 import cv2
 import threading
-import gfpgan
 import os
 
 import modules.globals
@@ -11,6 +10,15 @@ from modules.face_analyser import get_one_face
 from modules.typing import Frame, Face
 import platform
 import torch
+
+from modules.processors.frame.face_enhancer_backends import (
+    AVAILABLE_FACE_ENHANCER_BACKENDS,
+    DEFAULT_FACE_ENHANCER_BACKEND,
+    BackendInferenceError,
+    BackendLoadError,
+    FaceEnhancerBackend,
+    GfpganTorchBackend,
+)
 
 TORCH_DIRECTML_AVAILABLE = False
 DIRECTML_DEVICE = None
@@ -27,8 +35,7 @@ from modules.utilities import (
     is_video,
 )
 
-FACE_ENHANCER = None
-FACE_ENHANCER_DEVICE: Optional[torch.device] = None
+FACE_ENHANCER: Optional[FaceEnhancerBackend] = None
 DIRECTML_FACE_ENHANCER_DISABLED = False
 DIRECTML_FACE_ENHANCER_FORCED_CPU = False
 THREAD_SEMAPHORE = threading.Semaphore()
@@ -46,14 +53,43 @@ ALLOW_DIRECTML_FACE_ENHANCER = (
 )
 
 
+def _get_configured_backend_id() -> str:
+    env_override = os.environ.get("DLC_FACE_ENHANCER_BACKEND", "").strip().lower()
+    if env_override:
+        if env_override in AVAILABLE_FACE_ENHANCER_BACKENDS:
+            return env_override
+        update_status(
+            (
+                f"Unknown face enhancer backend '{env_override}'. "
+                "Falling back to default."
+            ),
+            NAME,
+        )
+
+    configured = (modules.globals.face_enhancer_backend or "").strip().lower()
+    if configured in AVAILABLE_FACE_ENHANCER_BACKENDS:
+        return configured
+
+    if configured:
+        update_status(
+            (
+                f"Face enhancer backend '{configured}' is not available. "
+                f"Using '{DEFAULT_FACE_ENHANCER_BACKEND}' instead."
+            ),
+            NAME,
+        )
+
+    return DEFAULT_FACE_ENHANCER_BACKEND
+
+
 def pre_check() -> bool:
-    download_directory_path = models_dir
-    conditional_download(
-        download_directory_path,
-        [
-            "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth"
-        ],
+    backend_id = _get_configured_backend_id()
+    backend_cls = AVAILABLE_FACE_ENHANCER_BACKENDS.get(
+        backend_id, AVAILABLE_FACE_ENHANCER_BACKENDS[DEFAULT_FACE_ENHANCER_BACKEND]
     )
+    required_urls = list(backend_cls.required_model_urls())
+    if required_urls:
+        conditional_download(models_dir, required_urls)
     return True
 
 
@@ -94,6 +130,7 @@ def _directml_error_summary(error: Exception) -> str:
     return message
 
 
+def _select_torch_device(force_device: Optional[torch.device]) -> Tuple[torch.device, List[str]]:
 def _force_cpu_face_enhancer(
     message: Optional[str] = None, mark_disabled: bool = False
 ) -> torch.device:
@@ -168,10 +205,9 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
                             "DLC_ALLOW_DIRECTML_FACE_ENHANCER=1 to override."
                         )
                     )
-                    device_priority.append("CPU (DirectML disabled)")
                 else:
                     selected_device = torch.device("cpu")
-                    device_priority.append("CPU (DirectML disabled)")
+                device_priority.append("CPU (DirectML disabled)")
             else:
                 selected_device = DIRECTML_DEVICE
                 device_priority.append("DirectML")
@@ -211,135 +247,184 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
             selected_device = torch.device("cpu")
             device_priority.append("CPU")
 
-    try:
-        FACE_ENHANCER = gfpgan.GFPGANer(
-            model_path=model_path, upscale=1, device=selected_device
+    if selected_device is None:
+        selected_device = torch.device("cpu")
+        if not device_priority:
+            device_priority.append("CPU")
+
+    return selected_device, device_priority
+
+
+def _force_cpu_face_enhancer(
+    message: Optional[str] = None, mark_disabled: bool = False
+) -> torch.device:
+    """Return a CPU device and mark DirectML as unusable when requested."""
+
+    global DIRECTML_FACE_ENHANCER_DISABLED, DIRECTML_FACE_ENHANCER_FORCED_CPU
+
+    if mark_disabled:
+        DIRECTML_FACE_ENHANCER_DISABLED = True
+
+    DIRECTML_FACE_ENHANCER_FORCED_CPU = True
+
+    if message:
+        update_status(
+            (
+                f"{message}"
+                "\nContinuing with CPU fallback; this can be significantly slower, "
+                "especially on high-resolution videos. The interface may look"
+                " idle while the CPU works through each frame, but progress"
+                " updates will resume once the first frame finishes."
+            ),
+            NAME,
         )
-        FACE_ENHANCER_DEVICE = selected_device
-    except Exception as directml_error:
-        if TORCH_DIRECTML_AVAILABLE and selected_device == DIRECTML_DEVICE:
-            DIRECTML_FACE_ENHANCER_DISABLED = True
-        if (
-            force_device is None
-            and TORCH_DIRECTML_AVAILABLE
-            and selected_device == DIRECTML_DEVICE
-        ):
+
+    return torch.device("cpu")
+
+
+def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> FaceEnhancerBackend:
+    global FACE_ENHANCER, DIRECTML_FACE_ENHANCER_DISABLED
+    global DIRECTML_FACE_ENHANCER_FORCED_CPU
+
+    backend_id = _get_configured_backend_id()
+    backend_cls = AVAILABLE_FACE_ENHANCER_BACKENDS.get(
+        backend_id, AVAILABLE_FACE_ENHANCER_BACKENDS[DEFAULT_FACE_ENHANCER_BACKEND]
+    )
+
+    if FACE_ENHANCER is None or not isinstance(FACE_ENHANCER, backend_cls):
+        if FACE_ENHANCER is not None:
+            FACE_ENHANCER.unload()
+        FACE_ENHANCER = backend_cls(models_dir)
+
+    device_priority: List[str] = []
+    backend = FACE_ENHANCER
+
+    if isinstance(backend, GfpganTorchBackend):
+        selected_device, device_priority = _select_torch_device(force_device)
+
+        try:
+            backend.load(device=selected_device)
+        except BackendLoadError as directml_error:
+            if TORCH_DIRECTML_AVAILABLE and selected_device == DIRECTML_DEVICE:
+                DIRECTML_FACE_ENHANCER_DISABLED = True
+            if (
+                force_device is None
+                and TORCH_DIRECTML_AVAILABLE
+                and selected_device == DIRECTML_DEVICE
+            ):
+                update_status(
+                    (
+                        "DirectML face enhancement failed, switching to CPU. "
+                        f"Details: {_directml_error_summary(directml_error.original or directml_error)}"
+                    ),
+                    NAME,
+                )
+                print(
+                    "DirectML initialisation for GFPGAN failed; "
+                    f"falling back to CPU: {directml_error.original or directml_error}"
+                )
+                backend.unload()
+                return _initialise_face_enhancer(torch.device("cpu"))
+            raise
+
+        device = backend.device
+        device_label = _device_name(device)
+        if str(device).upper() != device_label:
+            print(
+                "Selected device: "
+                f"{device_label} ({device}) and device priority: {device_priority}"
+            )
+        else:
+            print(
+                f"Selected device: {device_label} and device priority: {device_priority}"
+            )
+    else:
+        providers = modules.globals.execution_providers
+        try:
+            backend.load(execution_providers=providers)
+        except BackendLoadError as error:
+            provider_label = ", ".join(providers) if providers else "default providers"
             update_status(
                 (
-                    "DirectML face enhancement failed, switching to CPU. "
-                    f"Details: {_directml_error_summary(directml_error)}"
+                    f"Failed to initialise {backend.display_name} using {provider_label}. "
+                    f"Details: {_directml_error_summary(error.original or error)}"
                 ),
                 NAME,
             )
-            print(
-                "DirectML initialisation for GFPGAN failed; "
-                f"falling back to CPU: {directml_error}"
-            )
-            return _initialise_face_enhancer(torch.device("cpu"))
-        raise
+            raise
 
-    device_label = _device_name(selected_device)
-    if str(selected_device).upper() != device_label:
+        provider = backend.provider or "CPUExecutionProvider"
         print(
-            "Selected device: "
-            f"{device_label} ({selected_device}) and device priority: {device_priority}"
+            f"Selected backend: {backend.display_name} via {provider}"
         )
-    else:
-        print(
-            f"Selected device: {device_label} and device priority: {device_priority}"
-        )
-    return FACE_ENHANCER
+
+    return backend
 
 
-def get_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
-    global FACE_ENHANCER, FACE_ENHANCER_DEVICE
+def get_face_enhancer(force_device: Optional[torch.device] = None) -> FaceEnhancerBackend:
+    global FACE_ENHANCER
 
     with THREAD_LOCK:
-        if (
-            FACE_ENHANCER is None
-            or (force_device is not None and FACE_ENHANCER_DEVICE != force_device)
+        if FACE_ENHANCER is None:
+            FACE_ENHANCER = _initialise_face_enhancer(force_device)
+        elif (
+            force_device is not None
+            and isinstance(FACE_ENHANCER, GfpganTorchBackend)
+            and FACE_ENHANCER.device != force_device
         ):
-            FACE_ENHANCER = None
-            FACE_ENHANCER_DEVICE = None
-            return _initialise_face_enhancer(force_device)
+            FACE_ENHANCER.unload()
+            FACE_ENHANCER = _initialise_face_enhancer(force_device)
 
+    # FACE_ENHANCER is guaranteed to be set at this point
+    assert FACE_ENHANCER is not None
     return FACE_ENHANCER
 
 
 def enhance_face(temp_frame: Frame) -> Frame:
-    global FACE_ENHANCER, DIRECTML_FACE_ENHANCER_DISABLED
-
     with THREAD_SEMAPHORE:
         enhancer = get_face_enhancer()
-        try:
-            _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
-        except RuntimeError as runtime_error:
-            error_message = str(runtime_error).lower()
-            directml_tensor_mismatch = (
-                TORCH_DIRECTML_AVAILABLE
-                and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
-                and "privateuseone" in error_message
-            )
 
-            if directml_tensor_mismatch:
-                cpu_device = _force_cpu_face_enhancer(
-                    (
-                        "DirectML face enhancement failed during inference, "
-                        "switching to CPU. "
-                        f"Details: {_directml_error_summary(runtime_error)}"
-                    ),
-                    mark_disabled=True,
-                )
-                print(
-                    "DirectML inference for GFPGAN failed due to tensor type mismatch; "
-                    f"falling back to CPU: {runtime_error}"
-                )
-                FACE_ENHANCER = None
-                enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
-            elif (
-                TORCH_DIRECTML_AVAILABLE
-                and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
-            ):
-                cpu_device = _force_cpu_face_enhancer(
-                    (
-                        "DirectML face enhancement failed during inference, "
-                        "switching to CPU. "
-                        f"Details: {_directml_error_summary(runtime_error)}"
-                    ),
-                    mark_disabled=True,
-                )
-                print(
-                    "DirectML inference for GFPGAN failed; "
-                    f"falling back to CPU: {runtime_error}"
-                )
-                FACE_ENHANCER = None
-                enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
-            else:
+        while True:
+            try:
+                temp_frame = enhancer.enhance(temp_frame)
+                break
+            except BackendInferenceError as backend_error:
+                original_error = backend_error.original or backend_error
+
+                if (
+                    TORCH_DIRECTML_AVAILABLE
+                    and isinstance(enhancer, GfpganTorchBackend)
+                    and enhancer.device == DIRECTML_DEVICE
+                ):
+                    error_message = str(original_error).lower()
+                    directml_tensor_mismatch = "privateuseone" in error_message
+
+                    cpu_device = _force_cpu_face_enhancer(
+                        (
+                            "DirectML face enhancement failed during inference, "
+                            "switching to CPU. "
+                            f"Details: {_directml_error_summary(original_error)}"
+                        ),
+                        mark_disabled=True,
+                    )
+
+                    if directml_tensor_mismatch:
+                        print(
+                            "DirectML inference for GFPGAN failed due to tensor type mismatch; "
+                            f"falling back to CPU: {original_error}"
+                        )
+                    else:
+                        print(
+                            "DirectML inference for GFPGAN failed; "
+                            f"falling back to CPU: {original_error}"
+                        )
+
+                    enhancer.unload()
+                    enhancer = get_face_enhancer(cpu_device)
+                    continue
+
                 raise
-        except Exception as unexpected_error:
-            if (
-                TORCH_DIRECTML_AVAILABLE
-                and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
-            ):
-                cpu_device = _force_cpu_face_enhancer(
-                    (
-                        "DirectML face enhancement failed during inference, "
-                        "switching to CPU. "
-                        f"Details: {_directml_error_summary(unexpected_error)}"
-                    ),
-                    mark_disabled=True,
-                )
-                print(
-                    "DirectML inference for GFPGAN encountered an unexpected error; "
-                    f"falling back to CPU: {unexpected_error}"
-                )
-                FACE_ENHANCER = None
-                enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
-            else:
-                raise
+
     return temp_frame
 
 
