@@ -153,6 +153,7 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
         if any(normalized_provider in encoded_provider for normalized_provider in normalized_execution_providers)
     ]
 
+
     if (
         decoded
         and 'CPUExecutionProvider' in available_providers
@@ -164,6 +165,7 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
     ):
         decoded.append('CPUExecutionProvider')
 
+main
     if not decoded and normalized_execution_providers and 'CPUExecutionProvider' in available_providers:
         print('\033[33mRequested execution provider is not available. Falling back to CPU.\033[0m')
         decoded = ['CPUExecutionProvider']

@@ -276,6 +276,7 @@ python run.py --execution-provider dml
 # or use the convenience alias
 python run.py --execution-provider amd
 # Windows users can also run the helper script
+
  run-directml.bat
  ```
 
@@ -284,6 +285,10 @@ python run.py --execution-provider amd
 -   DirectML and ROCm execution currently run frame processing sequentially for
     stability. The application will automatically cap execution threads to `1`
     when these providers are selected.
+=======
+run-directml.bat
+```
+main
 
 **OpenVINO™ Execution Provider (Intel)**
 
