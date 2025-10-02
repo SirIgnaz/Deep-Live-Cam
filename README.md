@@ -283,9 +283,11 @@ python run.py --execution-provider amd
     stability. The application will automatically cap execution threads to `1`
     when these providers are selected.
 -   GFPGAN face enhancement falls back to CPU by default when DirectML is in
-    use because torch-directml cannot run the model reliably. Set the
-    environment variable `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the
-    experimental DirectML path.
+    use because torch-directml cannot run the model reliably. This fallback can
+    appear to "hang" on high-resolution media because CPU inference is
+    significantly slower. Set the environment variable
+    `DLC_ALLOW_DIRECTML_FACE_ENHANCER=1` to opt into the experimental DirectML
+    path if you want to try GPU acceleration instead.
 
 **OpenVINO™ Execution Provider (Intel)**
 
