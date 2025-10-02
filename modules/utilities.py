@@ -76,16 +76,21 @@ def extract_frames(target_path: str) -> None:
 def create_video(target_path: str, fps: float = 30.0) -> None:
     temp_output_path = get_temp_output_path(target_path)
     temp_directory_path = get_temp_directory_path(target_path)
-    run_ffmpeg(
+    ffmpeg_args = [
+        "-r",
+        str(fps),
+        "-i",
+        os.path.join(temp_directory_path, "%04d.png"),
+    ]
+
+    if modules.globals.video_encoder:
+        ffmpeg_args.extend(["-c:v", modules.globals.video_encoder])
+
+    if modules.globals.video_quality is not None:
+        ffmpeg_args.extend(["-crf", str(modules.globals.video_quality)])
+
+    ffmpeg_args.extend(
         [
-            "-r",
-            str(fps),
-            "-i",
-            os.path.join(temp_directory_path, "%04d.png"),
-            "-c:v",
-            modules.globals.video_encoder,
-            "-crf",
-            str(modules.globals.video_quality),
             "-pix_fmt",
             "yuv420p",
             "-vf",
@@ -94,6 +99,8 @@ def create_video(target_path: str, fps: float = 30.0) -> None:
             temp_output_path,
         ]
     )
+
+    run_ffmpeg(ffmpeg_args)
 
 
 def restore_audio(target_path: str, output_path: str) -> None:
