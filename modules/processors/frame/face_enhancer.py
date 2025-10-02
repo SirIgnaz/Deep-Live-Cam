@@ -4,6 +4,11 @@ import threading
 import gfpgan
 import os
 
+from modules.processors.frame.face_enhancer_backends import (
+    FaceEnhancerBackend,
+    GfpganTorchBackend,
+)
+
 import modules.globals
 import modules.processors.frame.core
 from modules.core import update_status
@@ -27,7 +32,7 @@ from modules.utilities import (
     is_video,
 )
 
-FACE_ENHANCER = None
+FACE_ENHANCER: Optional[FaceEnhancerBackend] = None
 FACE_ENHANCER_DEVICE: Optional[torch.device] = None
 DIRECTML_FACE_ENHANCER_DISABLED = False
 DIRECTML_FACE_ENHANCER_FORCED_CPU = False
@@ -111,13 +116,9 @@ def _force_cpu_face_enhancer(
             (
                 f"{message}"
                 "\nContinuing with CPU fallback; this can be significantly slower, "
-
                 "especially on high-resolution videos. The interface may look"
                 " idle while the CPU works through each frame, but progress"
                 " updates will resume once the first frame finishes."
-
-                "especially on high-resolution videos."
-main
             ),
             NAME,
         )
@@ -125,7 +126,9 @@ main
     return torch.device("cpu")
 
 
-def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
+def _initialise_face_enhancer(
+    force_device: Optional[torch.device] = None,
+) -> FaceEnhancerBackend:
     global FACE_ENHANCER, FACE_ENHANCER_DEVICE, DIRECTML_FACE_ENHANCER_DISABLED
     global DIRECTML_FACE_ENHANCER_FORCED_CPU
 
@@ -212,9 +215,10 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
             device_priority.append("CPU")
 
     try:
-        FACE_ENHANCER = gfpgan.GFPGANer(
+        gfpgan_enhancer = gfpgan.GFPGANer(
             model_path=model_path, upscale=1, device=selected_device
         )
+        FACE_ENHANCER = GfpganTorchBackend(gfpgan_enhancer)
         FACE_ENHANCER_DEVICE = selected_device
     except Exception as directml_error:
         if TORCH_DIRECTML_AVAILABLE and selected_device == DIRECTML_DEVICE:
@@ -248,10 +252,15 @@ def _initialise_face_enhancer(force_device: Optional[torch.device] = None) -> An
         print(
             f"Selected device: {device_label} and device priority: {device_priority}"
         )
+    if FACE_ENHANCER is None:
+        raise RuntimeError("Face enhancer backend failed to initialise")
+
     return FACE_ENHANCER
 
 
-def get_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
+def get_face_enhancer(
+    force_device: Optional[torch.device] = None,
+) -> FaceEnhancerBackend:
     global FACE_ENHANCER, FACE_ENHANCER_DEVICE
 
     with THREAD_LOCK:
@@ -263,16 +272,21 @@ def get_face_enhancer(force_device: Optional[torch.device] = None) -> Any:
             FACE_ENHANCER_DEVICE = None
             return _initialise_face_enhancer(force_device)
 
+    if FACE_ENHANCER is None:
+        raise RuntimeError("Face enhancer backend could not be initialised")
+
     return FACE_ENHANCER
 
 
-def enhance_face(temp_frame: Frame) -> Frame:
+def enhance_face(temp_frame: Frame, face: Optional[Face]) -> Frame:
     global FACE_ENHANCER, DIRECTML_FACE_ENHANCER_DISABLED
 
     with THREAD_SEMAPHORE:
         enhancer = get_face_enhancer()
         try:
-            _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+            _, _, temp_frame = enhancer.enhance(
+                temp_frame, face=face, paste_back=True
+            )
         except RuntimeError as runtime_error:
             error_message = str(runtime_error).lower()
             directml_tensor_mismatch = (
@@ -296,7 +310,9 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 )
                 FACE_ENHANCER = None
                 enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+                _, _, temp_frame = enhancer.enhance(
+                    temp_frame, face=face, paste_back=True
+                )
             elif (
                 TORCH_DIRECTML_AVAILABLE
                 and FACE_ENHANCER_DEVICE == DIRECTML_DEVICE
@@ -315,7 +331,9 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 )
                 FACE_ENHANCER = None
                 enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+                _, _, temp_frame = enhancer.enhance(
+                    temp_frame, face=face, paste_back=True
+                )
             else:
                 raise
         except Exception as unexpected_error:
@@ -337,7 +355,9 @@ def enhance_face(temp_frame: Frame) -> Frame:
                 )
                 FACE_ENHANCER = None
                 enhancer = get_face_enhancer(cpu_device)
-                _, _, temp_frame = enhancer.enhance(temp_frame, paste_back=True)
+                _, _, temp_frame = enhancer.enhance(
+                    temp_frame, face=face, paste_back=True
+                )
             else:
                 raise
     return temp_frame
@@ -346,7 +366,7 @@ def enhance_face(temp_frame: Frame) -> Frame:
 def process_frame(source_face: Face, temp_frame: Frame) -> Frame:
     target_face = get_one_face(temp_frame)
     if target_face:
-        temp_frame = enhance_face(temp_frame)
+        temp_frame = enhance_face(temp_frame, target_face)
     return temp_frame
 
 
@@ -374,5 +394,5 @@ def process_video(source_path: str, temp_frame_paths: List[str]) -> None:
 def process_frame_v2(temp_frame: Frame) -> Frame:
     target_face = get_one_face(temp_frame)
     if target_face:
-        temp_frame = enhance_face(temp_frame)
+        temp_frame = enhance_face(temp_frame, target_face)
     return temp_frame
