@@ -260,20 +260,30 @@ pip install onnxruntime-coreml==1.21.0
 python run.py --execution-provider coreml
 ```
 
-**DirectML Execution Provider (Windows)**
+**DirectML Execution Provider (Windows / AMD GPUs)**
 
-1. Install dependencies:
+1. Install dependencies (a fresh `pip install -r requirements.txt` on Windows already includes these packages):
 
 ```bash
-pip uninstall onnxruntime onnxruntime-directml
-pip install onnxruntime-directml==1.21.0
+pip uninstall onnxruntime onnxruntime-directml -y
+pip install onnxruntime-directml==1.22.0 torch-directml
 ```
 
 2. Usage:
 
 ```bash
-python run.py --execution-provider directml
-```
+python run.py --execution-provider dml
+# or use the convenience alias
+python run.py --execution-provider amd
+# Windows users can also run the helper script
+ run-directml.bat
+ ```
+
+3. Notes:
+
+-   DirectML and ROCm execution currently run frame processing sequentially for
+    stability. The application will automatically cap execution threads to `1`
+    when these providers are selected.
 
 **OpenVINO™ Execution Provider (Intel)**
 
