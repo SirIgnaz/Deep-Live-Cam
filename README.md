@@ -327,6 +327,10 @@ python run.py --execution-provider openvino
 -   Choose a source face image and a target image/video.
 -   Click "Start".
 -   The output will be saved in a directory named after the target video.
+-   Optional: enable **Map faces** to open the mapper after analysis. Use
+    **Select source image** to assign a portrait and **Adjust target faces** to
+    browse every detected frame, remove mismatched detections, and pick the
+    preview crop used for that target.
 
 **2. Webcam Mode**
 

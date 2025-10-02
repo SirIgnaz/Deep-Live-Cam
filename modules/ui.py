@@ -1,8 +1,9 @@
 import os
 import webbrowser
 import customtkinter as ctk
-from typing import Callable, Tuple
+from typing import Any, Callable, Dict, Tuple
 import cv2
+import numpy as np
 from cv2_enumerate_cameras import enumerate_cameras  # Add this import
 from PIL import Image, ImageOps
 import time
@@ -73,6 +74,7 @@ status_label = None
 popup_status_label = None
 popup_status_label_live = None
 source_label_dict = {}
+target_label_dict = {}
 source_label_dict_live = {}
 target_label_dict_live = {}
 
@@ -726,43 +728,96 @@ def create_source_target_popup(
     )
     scrollable_frame.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
 
-    def on_button_click(map, button_num):
-        map = update_popup_source(scrollable_frame, map, button_num)
+    def on_select_source(map, button_num):
+        update_popup_source(map, button_num)
+
+    def on_adjust_target(map, button_num):
+        update_popup_target(map, button_num)
+
+    source_label_dict.clear()
+    target_label_dict.clear()
 
     for item in map:
         id = item["id"]
 
-        button = ctk.CTkButton(
-            scrollable_frame,
+        entry_frame = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
+        entry_frame.grid(row=id, column=0, padx=30, pady=12, sticky="ew")
+        entry_frame.grid_columnconfigure(0, weight=0)
+        entry_frame.grid_columnconfigure(1, weight=0)
+        entry_frame.grid_columnconfigure(2, weight=0)
+        entry_frame.grid_columnconfigure(3, weight=0)
+
+        select_source_button = ctk.CTkButton(
+            entry_frame,
             text=_("Select source image"),
-            command=lambda id=id: on_button_click(map, id),
+            command=lambda id=id: on_select_source(map, id),
             width=DEFAULT_BUTTON_WIDTH,
             height=DEFAULT_BUTTON_HEIGHT,
         )
-        button.grid(row=id, column=0, padx=50, pady=10)
+        select_source_button.grid(row=0, column=0, padx=(0, 18), pady=(0, 6))
 
-        x_label = ctk.CTkLabel(
-            scrollable_frame,
-            text=f"X",
+        source_label = ctk.CTkLabel(
+            entry_frame,
+            text=f"S-{id}",
             width=MAPPER_PREVIEW_MAX_WIDTH,
             height=MAPPER_PREVIEW_MAX_HEIGHT,
         )
-        x_label.grid(row=id, column=2, padx=10, pady=10)
+        source_label.grid(row=0, column=1, padx=10, pady=(0, 6))
+        source_label_dict[id] = source_label
 
-        image = Image.fromarray(cv2.cvtColor(item["target"]["cv2"], cv2.COLOR_BGR2RGB))
-        image = image.resize(
-            (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT), Image.LANCZOS
+        x_label = ctk.CTkLabel(
+            entry_frame,
+            text="×",
+            width=30,
+            height=MAPPER_PREVIEW_MAX_HEIGHT,
         )
-        tk_image = ctk.CTkImage(image, size=image.size)
+        x_label.grid(row=0, column=2, padx=6, pady=(0, 6))
 
-        target_image = ctk.CTkLabel(
-            scrollable_frame,
+        target_label = ctk.CTkLabel(
+            entry_frame,
             text=f"T-{id}",
             width=MAPPER_PREVIEW_MAX_WIDTH,
             height=MAPPER_PREVIEW_MAX_HEIGHT,
         )
-        target_image.grid(row=id, column=3, padx=10, pady=10)
-        target_image.configure(image=tk_image)
+        target_label.grid(row=0, column=3, padx=10, pady=(0, 6))
+        target_label_dict[id] = target_label
+
+        adjust_target_button = ctk.CTkButton(
+            entry_frame,
+            text=_("Adjust target faces"),
+            command=lambda id=id: on_adjust_target(map, id),
+            width=DEFAULT_BUTTON_WIDTH,
+        )
+        adjust_target_button.grid(row=1, column=3, padx=10, pady=(6, 0), sticky="e")
+
+        if "source" in item:
+            source_crop = item["source"].get("cv2")
+            if source_crop is not None and source_crop.size > 0:
+                source_image = Image.fromarray(
+                    cv2.cvtColor(source_crop, cv2.COLOR_BGR2RGB)
+                )
+                source_image = ImageOps.fit(
+                    source_image,
+                    (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT),
+                    Image.LANCZOS,
+                )
+                source_photo = ctk.CTkImage(source_image, size=source_image.size)
+                source_label.configure(image=source_photo, text="")
+                source_label.image = source_photo
+
+        target_crop = item.get("target", {}).get("cv2")
+        if target_crop is not None and target_crop.size > 0:
+            target_image = Image.fromarray(
+                cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB)
+            )
+            target_image = ImageOps.fit(
+                target_image,
+                (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT),
+                Image.LANCZOS,
+            )
+            target_photo = ctk.CTkImage(target_image, size=target_image.size)
+            target_label.configure(image=target_photo, text="")
+            target_label.image = target_photo
 
     popup_status_label = ctk.CTkLabel(POPUP, text=None, justify="center")
     popup_status_label.grid(row=1, column=0, pady=15)
@@ -773,10 +828,12 @@ def create_source_target_popup(
     close_button.grid(row=2, column=0, pady=10)
 
 
-def update_popup_source(
-        scrollable_frame: ctk.CTkScrollableFrame, map: list, button_num: int
-) -> list:
-    global source_label_dict
+def update_popup_source(map: list, button_num: int) -> list:
+    global source_label_dict, RECENT_DIRECTORY_SOURCE
+
+    label = source_label_dict.get(button_num)
+    if label is None:
+        return map
 
     source_path = ctk.filedialog.askopenfilename(
         title=_("select a source image"),
@@ -784,45 +841,312 @@ def update_popup_source(
         filetypes=[img_ft],
     )
 
-    if "source" in map[button_num]:
-        map[button_num].pop("source")
-        source_label_dict[button_num].destroy()
-        del source_label_dict[button_num]
-
-    if source_path == "":
+    if not source_path:
         return map
-    else:
-        cv2_img = cv2.imread(source_path)
-        face = get_one_face(cv2_img)
 
-        if face:
-            x_min, y_min, x_max, y_max = face["bbox"]
+    cv2_img = cv2.imread(source_path)
+    face = get_one_face(cv2_img)
 
-            map[button_num]["source"] = {
-                "cv2": cv2_img[int(y_min): int(y_max), int(x_min): int(x_max)],
-                "face": face,
-            }
+    if not face:
+        update_pop_status("Face could not be detected in last upload!")
+        return map
 
-            image = Image.fromarray(
-                cv2.cvtColor(map[button_num]["source"]["cv2"], cv2.COLOR_BGR2RGB)
-            )
-            image = image.resize(
-                (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT), Image.LANCZOS
-            )
-            tk_image = ctk.CTkImage(image, size=image.size)
+    bbox = face.get("bbox") if isinstance(face, dict) else getattr(face, "bbox", None)
+    if not bbox:
+        update_pop_status("Face could not be detected in last upload!")
+        return map
 
-            source_image = ctk.CTkLabel(
-                scrollable_frame,
-                text=f"S-{button_num}",
-                width=MAPPER_PREVIEW_MAX_WIDTH,
-                height=MAPPER_PREVIEW_MAX_HEIGHT,
-            )
-            source_image.grid(row=button_num, column=1, padx=10, pady=10)
-            source_image.configure(image=tk_image)
-            source_label_dict[button_num] = source_image
+    x_min, y_min, x_max, y_max = bbox
+    x_min, y_min, x_max, y_max = [int(value) for value in (x_min, y_min, x_max, y_max)]
+    crop = cv2_img[y_min:y_max, x_min:x_max]
+    if crop.size == 0:
+        update_pop_status("Face could not be detected in last upload!")
+        return map
+
+    map[button_num]["source"] = {"cv2": crop, "face": face}
+    RECENT_DIRECTORY_SOURCE = os.path.dirname(source_path)
+
+    image = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+    image = ImageOps.fit(
+        image,
+        (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT),
+        Image.LANCZOS,
+    )
+    tk_image = ctk.CTkImage(image, size=image.size)
+    label.configure(image=tk_image, text="")
+    label.image = tk_image
+    return map
+
+
+def update_popup_target(map: list, button_num: int) -> list:
+    global target_label_dict
+
+    label = target_label_dict.get(button_num)
+    if label is None:
+        return map
+
+    try:
+        entry = map[button_num]
+    except (IndexError, TypeError):
+        return map
+
+    target_frames = entry.get("target_faces_in_frame")
+    if not target_frames:
+        update_pop_status(_("No recorded target faces are available for this entry!"))
+        return map
+
+    def _face_bbox(face_obj):
+        if isinstance(face_obj, dict):
+            return face_obj.get("bbox")
+        return getattr(face_obj, "bbox", None)
+
+    def _face_score(face_obj) -> float:
+        if isinstance(face_obj, dict):
+            return float(face_obj.get("det_score", 0.0))
+        return float(getattr(face_obj, "det_score", 0.0))
+
+    frame_cache: Dict[str, np.ndarray] = {}
+    candidates = []
+
+    for frame_entry in target_frames:
+        location = frame_entry.get("location")
+        if not location:
+            continue
+
+        if location not in frame_cache:
+            frame_image = cv2.imread(location)
+            if frame_image is None:
+                continue
+            frame_cache[location] = frame_image
         else:
-            update_pop_status("Face could not be detected in last upload!")
+            frame_image = frame_cache[location]
+
+        faces = frame_entry.get("faces", [])
+        for idx, face in enumerate(faces):
+            bbox = _face_bbox(face)
+            if not bbox or len(bbox) < 4:
+                continue
+
+            x_min, y_min, x_max, y_max = bbox
+            x_min = int(max(0, min(frame_image.shape[1] - 1, x_min)))
+            y_min = int(max(0, min(frame_image.shape[0] - 1, y_min)))
+            x_max = int(max(x_min + 1, min(frame_image.shape[1], x_max)))
+            y_max = int(max(y_min + 1, min(frame_image.shape[0], y_max)))
+
+            crop = frame_image[y_min:y_max, x_min:x_max]
+            if crop.size == 0:
+                continue
+
+            candidates.append(
+                {
+                    "key": (location, idx),
+                    "frame": frame_entry.get("frame"),
+                    "index": idx,
+                    "face": face,
+                    "crop": crop.copy(),
+                    "score": _face_score(face),
+                    "selection_preview": None,
+                    "label_preview": None,
+                }
+            )
+
+    if not candidates:
+        update_pop_status(_("No recorded target faces are available for this entry!"))
         return map
+
+    selections: Dict[Tuple[str, int], bool] = {
+        candidate["key"]: True for candidate in candidates
+    }
+
+    selection_window = ctk.CTkToplevel(POPUP if POPUP is not None else ROOT)
+    selection_window.title(_("Adjust target faces"))
+    selection_window.geometry("420x520")
+    selection_window.transient(POPUP if POPUP is not None else ROOT)
+    selection_window.grab_set()
+    selection_window.grid_columnconfigure(0, weight=1)
+
+    preview_label = ctk.CTkLabel(selection_window, text="")
+    preview_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+
+    info_var = ctk.StringVar(value="")
+    info_label = ctk.CTkLabel(selection_window, textvariable=info_var)
+    info_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+
+    include_var = ctk.BooleanVar(value=True)
+    include_switch = ctk.CTkSwitch(
+        selection_window,
+        text=_("Include this face in the mapping"),
+        variable=include_var,
+    )
+    include_switch.grid(row=2, column=0, padx=20, pady=(0, 10))
+
+    nav_frame = ctk.CTkFrame(selection_window, fg_color="transparent")
+    nav_frame.grid(row=3, column=0, padx=20, pady=(0, 10), sticky="ew")
+    nav_frame.grid_columnconfigure(0, weight=0)
+    nav_frame.grid_columnconfigure(1, weight=1)
+    nav_frame.grid_columnconfigure(2, weight=0)
+
+    prev_button = ctk.CTkButton(nav_frame, text=_("Previous"))
+    prev_button.grid(row=0, column=0, padx=5)
+
+    slider_steps = max(len(candidates) - 1, 1)
+    slider = ctk.CTkSlider(nav_frame, from_=0, to=len(candidates) - 1, number_of_steps=slider_steps)
+    slider.grid(row=0, column=1, padx=5, sticky="ew")
+
+    next_button = ctk.CTkButton(nav_frame, text=_("Next"))
+    next_button.grid(row=0, column=2, padx=5)
+
+    action_frame = ctk.CTkFrame(selection_window, fg_color="transparent")
+    action_frame.grid(row=4, column=0, padx=20, pady=(10, 20), sticky="ew")
+    action_frame.grid_columnconfigure((0, 1), weight=1)
+
+    status_label = ctk.CTkLabel(selection_window, text="")
+    status_label.grid(row=5, column=0, padx=20, pady=(0, 10))
+
+    def _ensure_selection_preview(candidate: Dict[str, Any]) -> ctk.CTkImage:
+        if candidate["selection_preview"] is None:
+            image = Image.fromarray(cv2.cvtColor(candidate["crop"], cv2.COLOR_BGR2RGB))
+            image = ImageOps.fit(
+                image,
+                (
+                    MAPPER_PREVIEW_MAX_WIDTH * 2,
+                    MAPPER_PREVIEW_MAX_HEIGHT * 2,
+                ),
+                Image.LANCZOS,
+            )
+            candidate["selection_preview"] = ctk.CTkImage(image, size=image.size)
+        return candidate["selection_preview"]
+
+    def _ensure_label_preview(candidate: Dict[str, Any]) -> ctk.CTkImage:
+        if candidate["label_preview"] is None:
+            image = Image.fromarray(cv2.cvtColor(candidate["crop"], cv2.COLOR_BGR2RGB))
+            image = ImageOps.fit(
+                image,
+                (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT),
+                Image.LANCZOS,
+            )
+            candidate["label_preview"] = ctk.CTkImage(image, size=image.size)
+        return candidate["label_preview"]
+
+    current_index = 0
+
+    def _update_status(message: str) -> None:
+        status_label.configure(text=message)
+
+    def _on_include_toggle() -> None:
+        key = candidates[current_index]["key"]
+        selections[key] = include_var.get()
+
+    def _on_slider_change(value: float) -> None:
+        show_candidate(int(round(value)), update_slider=False)
+
+    def _show_previous() -> None:
+        show_candidate(current_index - 1)
+
+    def _show_next() -> None:
+        show_candidate(current_index + 1)
+
+    def show_candidate(index: int, *, update_slider: bool = True) -> None:
+        nonlocal current_index
+
+        index = max(0, min(len(candidates) - 1, index))
+        current_index = index
+        candidate = candidates[index]
+
+        preview = _ensure_selection_preview(candidate)
+        preview_label.configure(image=preview, text="")
+        preview_label.image = preview
+
+        frame_idx = candidate.get("frame")
+        face_idx = candidate.get("index", 0) + 1
+        score = candidate.get("score", 0.0)
+        if frame_idx is not None:
+            info_text = _("Frame {frame} • Face {face} • Confidence {score:.2f}").format(
+                frame=frame_idx,
+                face=face_idx,
+                score=score,
+            )
+        else:
+            info_text = _("Face {face} • Confidence {score:.2f}").format(
+                face=face_idx,
+                score=score,
+            )
+        info_var.set(info_text)
+
+        include_switch.configure(command=None)
+        include_var.set(selections[candidate["key"]])
+        include_switch.configure(command=_on_include_toggle)
+
+        prev_button.configure(state="normal" if index > 0 else "disabled")
+        next_button.configure(state="normal" if index < len(candidates) - 1 else "disabled")
+
+        if len(candidates) > 1:
+            slider.configure(state="normal")
+            if update_slider:
+                slider.configure(command=None)
+                slider.set(index)
+                slider.configure(command=_on_slider_change)
+        else:
+            slider.configure(state="disabled")
+
+        _update_status("")
+
+    def _apply_selection() -> None:
+        selected_candidates = [
+            candidate for candidate in candidates if selections.get(candidate["key"], False)
+        ]
+
+        if not selected_candidates:
+            _update_status(_("At least one target face must remain selected."))
+            return
+
+        filtered_frames = []
+        for frame_entry in target_frames:
+            location = frame_entry.get("location")
+            faces = frame_entry.get("faces", [])
+            filtered_faces = []
+            for idx, face in enumerate(faces):
+                if selections.get((location, idx), False):
+                    filtered_faces.append(face)
+            if filtered_faces:
+                new_entry = dict(frame_entry)
+                new_entry["faces"] = filtered_faces
+                filtered_frames.append(new_entry)
+
+        entry["target_faces_in_frame"] = filtered_frames
+
+        best_candidate = max(selected_candidates, key=lambda c: c.get("score", 0.0))
+        entry["target"] = {"cv2": best_candidate["crop"].copy(), "face": best_candidate["face"]}
+
+        label_preview = _ensure_label_preview(best_candidate)
+        label.configure(image=label_preview, text="")
+        label.image = label_preview
+
+        selection_window.grab_release()
+        selection_window.destroy()
+        update_pop_status(_("Target mapping updated!"))
+
+    def _cancel_selection() -> None:
+        selection_window.grab_release()
+        selection_window.destroy()
+
+    include_switch.configure(command=_on_include_toggle)
+    prev_button.configure(command=_show_previous)
+    next_button.configure(command=_show_next)
+    slider.configure(command=_on_slider_change)
+
+    apply_button = ctk.CTkButton(action_frame, text=_("Apply"), command=_apply_selection)
+    apply_button.grid(row=0, column=0, padx=5, sticky="ew")
+
+    cancel_button = ctk.CTkButton(action_frame, text=_("Cancel"), command=_cancel_selection)
+    cancel_button.grid(row=0, column=1, padx=5, sticky="ew")
+
+    selection_window.protocol("WM_DELETE_WINDOW", _cancel_selection)
+
+    show_candidate(0)
+
+    selection_window.wait_window()
+    return map
 
 
 def create_preview(parent: ctk.CTkToplevel) -> ctk.CTkToplevel:
