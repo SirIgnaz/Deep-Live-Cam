@@ -112,12 +112,14 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
     yielded a natural-looking transition while still keeping the restored facial
     details crisp.
 
+
     Before the alpha compositing step the backend optionally performs a simple
     colour transfer between the restored face and the destination region.
     Matching the first two Lab channel moments keeps the tonal values close to
     the surrounding frame and avoids sudden luminance jumps.  The behaviour can
     be tuned through ``color_correction_strength`` where ``0`` disables the
     adjustment and ``1`` applies the full transfer.
+
     """
 
     def __init__(
@@ -127,7 +129,10 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         input_size: int = 512,
         face_padding: float = 0.1,
         mask_blur: int = 45,
+
         color_correction_strength: float = 1.0,
+
+
     ) -> None:
         if ort is None:
             raise RuntimeError("onnxruntime is required for CodeFormerOnnxBackend")
@@ -141,6 +146,7 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
         self.input_size = int(max(32, input_size))
         self.face_padding = max(0.0, float(face_padding))
         self.mask_blur = int(max(0, mask_blur))  # 45 keeps the mask feather gentle by default.
+
         self.color_correction_strength = float(np.clip(color_correction_strength, 0.0, 1.0))
 
         inputs = session.get_inputs()
@@ -257,6 +263,7 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
 
         return mask[..., None]
 
+
     def _match_color(
         self,
         source: np.ndarray,
@@ -303,7 +310,6 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
 
         corrected_bgr = cv2.cvtColor(np.clip(corrected_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
         return corrected_bgr
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -378,6 +384,8 @@ class CodeFormerOnnxBackend(FaceEnhancerBackend):
                 corrected_canvas = self._match_color(canvas, output_frame, mask)
                 mask_3c = mask[..., None]
                 inv_mask_3c = np.float32(1.0) - mask_3c
+                mask = np.clip(mask, 0.0, 1.0)
+                mask = mask[..., None]
 
                 blended = (
                     corrected_canvas.astype(np.float32) * mask_3c
