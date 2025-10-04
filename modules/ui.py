@@ -165,6 +165,7 @@ def load_switch_states():
         )
         face_detector_size = switch_states.get("face_detector_size")
         if not modules.globals.face_detector_size_cli_override and (
+        if (
             isinstance(face_detector_size, (list, tuple))
             and len(face_detector_size) == 2
         ):
@@ -403,6 +404,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     ]
 
     def _format_size(size: Tuple[int, int]) -> str:
+    def _format_size(size: tuple[int, int]) -> str:
         return f"{size[0]} x {size[1]}"
 
     face_detector_size_map = {
@@ -436,6 +438,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
                 values=list(face_detector_size_map.keys())
             )
             modules.globals.face_detector_size_cli_override = False
+            modules.globals.face_detector_size = size
             save_switch_states()
 
     face_detector_size_label = ctk.CTkLabel(

@@ -27,8 +27,8 @@ if 'ROCMExecutionProvider' in modules.globals.execution_providers:
 warnings.filterwarnings('ignore', category=FutureWarning, module='insightface')
 warnings.filterwarnings('ignore', category=UserWarning, module='torchvision')
 
-
 def _parse_face_detector_size(value: str) -> Tuple[int, int]:
+def _parse_face_detector_size(value: str) -> tuple[int, int]:
     normalized = value.lower().replace(" ", "").replace(",", "x")
     if "x" not in normalized:
         raise argparse.ArgumentTypeError(
@@ -117,6 +117,8 @@ def parse_args() -> None:
         requested_face_detector_size != default_face_detector_size
     )
     modules.globals.face_detector_size = requested_face_detector_size
+    modules.globals.face_detector_size = tuple(args.face_detector_size)
+
 
     if any(
         provider in modules.globals.execution_providers
