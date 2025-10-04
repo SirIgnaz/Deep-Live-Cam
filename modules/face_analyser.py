@@ -33,8 +33,12 @@ def get_face_analyser() -> Any:
     global FACE_ANALYSER
 
     if FACE_ANALYSER is None:
-        FACE_ANALYSER = insightface.app.FaceAnalysis(name='buffalo_l', providers=modules.globals.execution_providers)
-        FACE_ANALYSER.prepare(ctx_id=0, det_size=(640, 640))
+        FACE_ANALYSER = insightface.app.FaceAnalysis(
+            name='buffalo_l', providers=modules.globals.execution_providers
+        )
+        FACE_ANALYSER.prepare(
+            ctx_id=0, det_size=modules.globals.face_detector_size
+        )
     return FACE_ANALYSER
 
 
