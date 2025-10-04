@@ -111,7 +111,14 @@ def parse_args() -> None:
     modules.globals.max_memory = args.max_memory
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
+    requested_face_detector_size = tuple(args.face_detector_size)
+    default_face_detector_size = tuple(program.get_default("face_detector_size"))
+    modules.globals.face_detector_size_cli_override = (
+        requested_face_detector_size != default_face_detector_size
+    )
+    modules.globals.face_detector_size = requested_face_detector_size
     modules.globals.face_detector_size = tuple(args.face_detector_size)
+
 
     if any(
         provider in modules.globals.execution_providers

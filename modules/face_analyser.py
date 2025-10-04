@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Any
+from typing import Any, Optional
 import insightface
 
 import cv2
@@ -36,10 +36,43 @@ def get_face_analyser() -> Any:
         FACE_ANALYSER = insightface.app.FaceAnalysis(
             name='buffalo_l', providers=modules.globals.execution_providers
         )
+        try:
+            FACE_ANALYSER.prepare(
+                ctx_id=0, det_size=modules.globals.face_detector_size
+            )
+        except Exception as error:
+            default_size = (640, 640)
+            if modules.globals.face_detector_size != default_size:
+                print(
+                    "\033[33mFailed to prepare face analyser with det_size="
+                    f"{modules.globals.face_detector_size}. Falling back to {default_size}."
+                    f" Error: {error}\033[0m"
+                )
+                modules.globals.face_detector_size = default_size
+                FACE_ANALYSER.prepare(ctx_id=0, det_size=default_size)
+            else:
+                FACE_ANALYSER = None
+                raise error
         FACE_ANALYSER.prepare(
             ctx_id=0, det_size=modules.globals.face_detector_size
         )
     return FACE_ANALYSER
+
+
+def reset_face_analyser(det_size: Optional[tuple[int, int]] = None) -> tuple[int, int]:
+    """Reset the cached face analyser and optionally set a new detector size."""
+
+    global FACE_ANALYSER
+
+    if det_size is not None:
+        modules.globals.face_detector_size = det_size
+
+    FACE_ANALYSER = None
+
+    # Trigger a re-initialisation so det_size fallbacks are handled immediately.
+    get_face_analyser()
+
+    return modules.globals.face_detector_size
 
 
 def get_one_face(frame: Frame) -> Any:

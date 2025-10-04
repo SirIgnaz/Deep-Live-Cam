@@ -10,6 +10,7 @@ import time
 import json
 import modules.globals
 import modules.metadata
+import modules.face_analyser as face_analyser_module
 from modules.face_analyser import (
     get_one_face,
     get_unique_faces_from_target_image,
@@ -163,6 +164,7 @@ def load_switch_states():
             )
         )
         face_detector_size = switch_states.get("face_detector_size")
+        if not modules.globals.face_detector_size_cli_override and (
         if (
             isinstance(face_detector_size, (list, tuple))
             and len(face_detector_size) == 2
@@ -417,7 +419,26 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     def _set_face_detector_size(selection: str) -> None:
         size = face_detector_size_map.get(selection)
         if size:
+            try:
+                actual_size = face_analyser_module.reset_face_analyser(size)
+            except Exception as error:  # pragma: no cover - GUI feedback path
+                print(
+                    "\033[31mFailed to apply face detector size "
+                    f"{size}. Error: {error}\033[0m"
+                )
+                face_detector_size_var.set(
+                    _format_size(modules.globals.face_detector_size)
+                )
+                return
+            formatted_size = _format_size(actual_size)
+            face_detector_size_map[formatted_size] = actual_size
+            face_detector_size_var.set(formatted_size)
+            face_detector_size_option_menu.configure(
+                values=list(face_detector_size_map.keys())
+            )
+            modules.globals.face_detector_size_cli_override = False
             modules.globals.face_detector_size = size
+
             save_switch_states()
 
     face_detector_size_label = ctk.CTkLabel(
