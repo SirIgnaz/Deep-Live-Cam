@@ -116,3 +116,37 @@ def test_directml_failure_without_fallback_reraises(monkeypatch):
         face_analyser.get_many_faces(frame="frame")
 
     assert global_state.execution_providers == ["DmlExecutionProvider"]
+
+
+def test_failed_fallback_restores_original_providers(monkeypatch):
+    monkeypatch.setattr(
+        global_state,
+        "execution_providers",
+        ["DmlExecutionProvider", "CPUExecutionProvider"],
+        raising=False,
+    )
+
+    reset_history = []
+
+    def fake_reset_face_analyser(det_size=None):
+        reset_history.append(list(global_state.execution_providers))
+        return global_state.face_detector_size
+
+    class _DynamicAnalyser:
+        def get(self, frame):
+            if face_analyser._is_directml_preferred():
+                raise face_analyser.OrtRuntimeException("DML failure")
+            raise face_analyser.OrtRuntimeException("CPU failure")
+
+    monkeypatch.setattr(face_analyser, "get_face_analyser", lambda: _DynamicAnalyser())
+    monkeypatch.setattr(face_analyser, "reset_face_analyser", fake_reset_face_analyser)
+
+    with pytest.raises(face_analyser.OrtRuntimeException) as exc_info:
+        face_analyser.get_many_faces(frame="frame")
+
+    assert str(exc_info.value) == "DML failure"
+    assert global_state.execution_providers == ["DmlExecutionProvider", "CPUExecutionProvider"]
+    assert reset_history == [
+        ["CPUExecutionProvider"],
+        ["DmlExecutionProvider", "CPUExecutionProvider"],
+    ]
