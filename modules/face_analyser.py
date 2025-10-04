@@ -128,6 +128,7 @@ def _retry_without_directml(original_error: Exception, frame: Frame) -> Any:
         fallback_providers,
     )
 
+    previous_providers = list(modules.globals.execution_providers or [])
     modules.globals.execution_providers = fallback_providers
     reset_face_analyser()
 
@@ -135,8 +136,19 @@ def _retry_without_directml(original_error: Exception, frame: Frame) -> Any:
         return get_face_analyser().get(frame)
     except IndexError:
         return None
-    except OrtRuntimeException:
-        raise original_error
+    except Exception as fallback_error:
+        modules.globals.execution_providers = previous_providers
+        try:
+            reset_face_analyser()
+        except Exception as restore_error:  # pragma: no cover - defensive clean-up only.
+            LOGGER.debug(
+                "Failed to restore face analyser after fallback: %s",
+                restore_error,
+            )
+
+        if isinstance(fallback_error, OrtRuntimeException):
+            raise original_error from fallback_error
+        raise
 
 
 def get_one_face(frame: Frame) -> Any:
