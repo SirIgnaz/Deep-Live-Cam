@@ -10,6 +10,7 @@ import time
 import json
 import modules.globals
 import modules.metadata
+import modules.face_analyser as face_analyser_module
 from modules.face_analyser import (
     get_one_face,
     get_unique_faces_from_target_image,
@@ -125,6 +126,7 @@ def save_switch_states():
         "show_mouth_mask_box": modules.globals.show_mouth_mask_box,
         "codeformer_mask_blur": modules.globals.codeformer_mask_blur,
         "codeformer_color_strength": modules.globals.codeformer_color_strength,
+        "face_detector_size": list(modules.globals.face_detector_size),
     }
     with open("switch_states.json", "w") as f:
         json.dump(switch_states, f)
@@ -161,6 +163,18 @@ def load_switch_states():
                 "codeformer_color_strength", modules.globals.codeformer_color_strength
             )
         )
+        face_detector_size = switch_states.get("face_detector_size")
+        if not modules.globals.face_detector_size_cli_override and (
+            isinstance(face_detector_size, (list, tuple))
+            and len(face_detector_size) == 2
+        ):
+            try:
+                modules.globals.face_detector_size = (
+                    int(face_detector_size[0]),
+                    int(face_detector_size[1]),
+                )
+            except (TypeError, ValueError):
+                pass
     except FileNotFoundError:
         # If the file doesn't exist, use default values
         pass
@@ -380,6 +394,65 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     )
     many_faces_switch.grid(row=1, column=0, sticky="ew", pady=12)
 
+    predefined_detector_sizes = [
+        (512, 512),
+        (640, 640),
+        (768, 768),
+        (896, 896),
+        (1024, 1024),
+    ]
+
+    def _format_size(size: tuple[int, int]) -> str:
+        return f"{size[0]} x {size[1]}"
+
+    face_detector_size_map = {
+        _format_size(size): size for size in predefined_detector_sizes
+    }
+
+    current_face_detector_label = _format_size(modules.globals.face_detector_size)
+    if current_face_detector_label not in face_detector_size_map:
+        face_detector_size_map[current_face_detector_label] = modules.globals.face_detector_size
+
+    face_detector_size_var = ctk.StringVar(value=current_face_detector_label)
+
+    def _set_face_detector_size(selection: str) -> None:
+        size = face_detector_size_map.get(selection)
+        if size:
+            try:
+                actual_size = face_analyser_module.reset_face_analyser(size)
+            except Exception as error:  # pragma: no cover - GUI feedback path
+                print(
+                    "\033[31mFailed to apply face detector size "
+                    f"{size}. Error: {error}\033[0m"
+                )
+                face_detector_size_var.set(
+                    _format_size(modules.globals.face_detector_size)
+                )
+                return
+            formatted_size = _format_size(actual_size)
+            face_detector_size_map[formatted_size] = actual_size
+            face_detector_size_var.set(formatted_size)
+            face_detector_size_option_menu.configure(
+                values=list(face_detector_size_map.keys())
+            )
+            modules.globals.face_detector_size_cli_override = False
+            save_switch_states()
+
+    face_detector_size_label = ctk.CTkLabel(
+        right_option_column,
+        text=_("Face detector size"),
+        anchor="w",
+    )
+    face_detector_size_label.grid(row=2, column=0, sticky="ew")
+
+    face_detector_size_option_menu = ctk.CTkOptionMenu(
+        right_option_column,
+        values=list(face_detector_size_map.keys()),
+        variable=face_detector_size_var,
+        command=_set_face_detector_size,
+    )
+    face_detector_size_option_menu.grid(row=3, column=0, sticky="ew", pady=12)
+
     color_correction_value = ctk.BooleanVar(value=modules.globals.color_correction)
     color_correction_switch = ctk.CTkSwitch(
         right_option_column,
@@ -391,7 +464,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    color_correction_switch.grid(row=2, column=0, sticky="ew", pady=12)
+    color_correction_switch.grid(row=4, column=0, sticky="ew", pady=12)
 
     directml_face_enhancer_value = ctk.BooleanVar(
         value=modules.globals.allow_directml_face_enhancer
@@ -406,10 +479,10 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    directml_face_enhancer_switch.grid(row=3, column=0, sticky="ew", pady=12)
+    directml_face_enhancer_switch.grid(row=5, column=0, sticky="ew", pady=12)
 
     codeformer_settings_frame = ctk.CTkFrame(right_option_column, fg_color="transparent")
-    codeformer_settings_frame.grid(row=4, column=0, sticky="ew", pady=12)
+    codeformer_settings_frame.grid(row=6, column=0, sticky="ew", pady=12)
     codeformer_settings_frame.grid_columnconfigure(0, weight=1)
     codeformer_settings_frame.grid_columnconfigure(1, weight=0)
     codeformer_settings_frame.grid_columnconfigure(2, weight=0)
