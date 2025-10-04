@@ -28,7 +28,6 @@ warnings.filterwarnings('ignore', category=FutureWarning, module='insightface')
 warnings.filterwarnings('ignore', category=UserWarning, module='torchvision')
 
 def _parse_face_detector_size(value: str) -> Tuple[int, int]:
-def _parse_face_detector_size(value: str) -> tuple[int, int]:
     normalized = value.lower().replace(" ", "").replace(",", "x")
     if "x" not in normalized:
         raise argparse.ArgumentTypeError(
