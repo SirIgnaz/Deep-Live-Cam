@@ -15,6 +15,19 @@ from pathlib import Path
 
 FACE_ANALYSER = None
 
+MIN_FACE_DET_SCORE = 0.5
+
+
+def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
+    if isinstance(face, dict):
+        return face.get(attribute, default)
+    return getattr(face, attribute, default)
+
+
+def _get_face_det_score(face: Any) -> float:
+    score = _get_face_attribute(face, 'det_score')
+    return score if score is not None else 0.0
+
 
 def get_face_analyser() -> Any:
     global FACE_ANALYSER
@@ -114,18 +127,25 @@ def get_unique_faces_from_target_video() -> Any:
             temp_frame = cv2.imread(temp_frame_path)
             many_faces = get_many_faces(temp_frame)
 
-            for face in many_faces:
-                face_embeddings.append(face.normed_embedding)
-            
-            frame_face_embeddings.append({'frame': i, 'faces': many_faces, 'location': temp_frame_path})
+            filtered_faces = []
+            if many_faces:
+                for face in many_faces:
+                    if _get_face_det_score(face) >= MIN_FACE_DET_SCORE:
+                        face_embeddings.append(face.normed_embedding)
+                        filtered_faces.append(face)
+            frame_face_embeddings.append({'frame': i, 'faces': filtered_faces, 'location': temp_frame_path})
             i += 1
 
-        centroids = find_cluster_centroids(face_embeddings)
+        centroids = find_cluster_centroids(face_embeddings) if face_embeddings else []
 
-        for frame in frame_face_embeddings:
-            for face in frame['faces']:
-                closest_centroid_index, _ = find_closest_centroid(centroids, face.normed_embedding)
-                face['target_centroid'] = closest_centroid_index
+        if centroids:
+            for frame in frame_face_embeddings:
+                for face in frame['faces']:
+                    closest_centroid_index, _ = find_closest_centroid(centroids, face.normed_embedding)
+                    if isinstance(face, dict):
+                        face['target_centroid'] = closest_centroid_index
+                    else:
+                        setattr(face, 'target_centroid', closest_centroid_index)
 
         for i in range(len(centroids)):
             modules.globals.source_target_map.append({
@@ -134,7 +154,11 @@ def get_unique_faces_from_target_video() -> Any:
 
             temp = []
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
-                temp.append({'frame': frame['frame'], 'faces': [face for face in frame['faces'] if face['target_centroid'] == i], 'location': frame['location']})
+                faces_for_centroid = [
+                    face for face in frame['faces']
+                    if _get_face_attribute(face, 'target_centroid') == i and _get_face_det_score(face) >= MIN_FACE_DET_SCORE
+                ]
+                temp.append({'frame': frame['frame'], 'faces': faces_for_centroid, 'location': frame['location']})
 
             filtered_temp = clone_frame_entries(temp)
 
