@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 
@@ -8,6 +9,24 @@ import cv2
 import numpy as np
 import modules.globals
 from tqdm import tqdm
+
+try:
+    from onnxruntime.capi.onnxruntime_pybind11_state import RuntimeException as OrtRuntimeException
+except ImportError:  # pragma: no cover - onnxruntime may not expose the C API package.
+    try:
+        import onnxruntime  # type: ignore
+
+        OrtRuntimeException = getattr(onnxruntime, "RuntimeException")  # type: ignore[attr-defined]
+    except ImportError:  # pragma: no cover - onnxruntime is entirely unavailable.
+        class OrtRuntimeException(RuntimeError):
+            """Fallback runtime exception when onnxruntime is unavailable."""
+
+            pass
+
+
+LOGGER = logging.getLogger(__name__)
+
+_DIRECTML_PROVIDER = "dmlexecutionprovider"
 from modules.typing import Frame
 from modules.cluster_analysis import find_cluster_centroids, find_closest_centroid
 from modules.utilities import get_temp_directory_path, create_temp, extract_frames, clean_temp, get_temp_frame_paths
@@ -74,11 +93,59 @@ def reset_face_analyser(det_size: Optional[tuple[int, int]] = None) -> tuple[int
     return modules.globals.face_detector_size
 
 
+def _is_directml_preferred() -> bool:
+    providers = modules.globals.execution_providers or []
+    return bool(providers) and providers[0].lower() == _DIRECTML_PROVIDER
+
+
+def _providers_without_directml() -> list[str]:
+    return [
+        provider
+        for provider in modules.globals.execution_providers or []
+        if provider.lower() != _DIRECTML_PROVIDER
+    ]
+
+
+def _retry_without_directml(original_error: Exception, frame: Frame) -> Any:
+    if not _is_directml_preferred():
+        raise original_error
+
+    fallback_providers = _providers_without_directml()
+    if not fallback_providers:
+        raise original_error
+
+    LOGGER.warning(
+        "DirectML execution failed for face analysis; retrying with providers: %s",  # noqa: G004 - logging placeholder
+        fallback_providers,
+    )
+
+    modules.globals.execution_providers = fallback_providers
+    reset_face_analyser()
+
+    try:
+        return get_face_analyser().get(frame)
+    except IndexError:
+        return None
+    except OrtRuntimeException:
+        raise original_error
+
+
 def get_one_face(frame: Frame) -> Any:
-    face = get_face_analyser().get(frame)
+    try:
+        face = get_face_analyser().get(frame)
+    except IndexError:
+        return None
+    except OrtRuntimeException as error:
+        try:
+            face = _retry_without_directml(error, frame)
+        except OrtRuntimeException:
+            raise
+        if face is None:
+            return None
+
     try:
         return min(face, key=lambda x: x.bbox[0])
-    except ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -87,6 +154,11 @@ def get_many_faces(frame: Frame) -> Any:
         return get_face_analyser().get(frame)
     except IndexError:
         return None
+    except OrtRuntimeException as error:
+        faces = _retry_without_directml(error, frame)
+        if faces is None:
+            return None
+        return faces
 
 def has_valid_map() -> bool:
     for map in modules.globals.source_target_map:
