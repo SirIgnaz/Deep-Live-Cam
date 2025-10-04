@@ -10,6 +10,7 @@ from tqdm import tqdm
 from modules.typing import Frame
 from modules.cluster_analysis import find_cluster_centroids, find_closest_centroid
 from modules.utilities import get_temp_directory_path, create_temp, extract_frames, clean_temp, get_temp_frame_paths
+from modules.mapping_utils import clone_frame_entries
 from pathlib import Path
 
 FACE_ANALYSER = None
@@ -135,16 +136,7 @@ def get_unique_faces_from_target_video() -> Any:
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
                 temp.append({'frame': frame['frame'], 'faces': [face for face in frame['faces'] if face['target_centroid'] == i], 'location': frame['location']})
 
-            filtered_temp = []
-            for frame_entry in temp:
-                if isinstance(frame_entry, dict):
-                    new_entry = dict(frame_entry)
-                    faces = frame_entry.get('faces')
-                    if isinstance(faces, list):
-                        new_entry['faces'] = list(faces)
-                    filtered_temp.append(new_entry)
-                else:
-                    filtered_temp.append(frame_entry)
+            filtered_temp = clone_frame_entries(temp)
 
             modules.globals.source_target_map[i]['_all_target_faces_in_frame'] = temp
             modules.globals.source_target_map[i]['target_faces_in_frame_filtered'] = filtered_temp

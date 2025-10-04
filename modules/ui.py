@@ -28,6 +28,7 @@ from modules.utilities import (
 )
 from modules.video_capture import VideoCapturer
 from modules.gettext import LanguageManager
+from modules.mapping_utils import clone_frame_entries
 import platform
 
 if platform.system() == "Windows":
@@ -893,15 +894,6 @@ def update_popup_target(map: list, button_num: int) -> list:
     target_frames_all = entry.get("_all_target_faces_in_frame")
     filtered_frames = entry.get("target_faces_in_frame_filtered")
 
-    def _clone_frame_entry(frame_entry: Dict[str, Any]) -> Dict[str, Any]:
-        if isinstance(frame_entry, dict):
-            cloned_entry = dict(frame_entry)
-            faces = frame_entry.get("faces")
-            if isinstance(faces, list):
-                cloned_entry["faces"] = list(faces)
-            return cloned_entry
-        return frame_entry
-
     if target_frames_all is None:
         base_frames = entry.get("target_faces_in_frame")
         if base_frames:
@@ -916,7 +908,7 @@ def update_popup_target(map: list, button_num: int) -> list:
         return map
 
     if filtered_frames is None:
-        filtered_frames = [_clone_frame_entry(frame) for frame in target_frames_all]
+        filtered_frames = clone_frame_entries(target_frames_all)
         entry["target_faces_in_frame_filtered"] = filtered_frames
 
     entry["target_faces_in_frame"] = filtered_frames
@@ -1138,18 +1130,19 @@ def update_popup_target(map: list, button_num: int) -> list:
             _update_status(_("At least one target face must remain selected."))
             return
 
+        cloned_target_frames = clone_frame_entries(target_frames_all)
         filtered_frames_result = []
-        for frame_entry in target_frames_all:
+        for frame_entry, cloned_entry in zip(target_frames_all, cloned_target_frames):
             location = frame_entry.get("location")
             faces = frame_entry.get("faces", [])
-            filtered_faces = []
-            for idx, face in enumerate(faces):
-                if selections.get((location, idx), False):
-                    filtered_faces.append(face)
+            filtered_faces = [
+                face
+                for idx, face in enumerate(faces)
+                if selections.get((location, idx), False)
+            ]
             if filtered_faces:
-                new_entry = _clone_frame_entry(frame_entry)
-                new_entry["faces"] = filtered_faces
-                filtered_frames_result.append(new_entry)
+                cloned_entry["faces"] = filtered_faces
+                filtered_frames_result.append(cloned_entry)
 
         entry["target_faces_in_frame_filtered"] = filtered_frames_result
         entry["target_faces_in_frame"] = filtered_frames_result
