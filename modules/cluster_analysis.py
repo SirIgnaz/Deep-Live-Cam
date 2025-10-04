@@ -7,16 +7,31 @@ from typing import Any
 def find_cluster_centroids(embeddings, max_k=10) -> Any:
     inertia = []
     cluster_centroids = []
+    silhouette_scores = []
     K = range(1, max_k+1)
 
-    for k in K:
+    for idx, k in enumerate(K):
         kmeans = KMeans(n_clusters=k, random_state=0)
         kmeans.fit(embeddings)
         inertia.append(kmeans.inertia_)
         cluster_centroids.append({"k": k, "centroids": kmeans.cluster_centers_})
 
-    diffs = [inertia[i] - inertia[i+1] for i in range(len(inertia)-1)]
-    optimal_centroids = cluster_centroids[diffs.index(max(diffs)) + 1]['centroids']
+        if k > 1:
+            try:
+                score = silhouette_score(embeddings, kmeans.labels_)
+            except ValueError:
+                continue
+            silhouette_scores.append({"index": idx, "score": score})
+
+    if silhouette_scores:
+        optimal_index = max(silhouette_scores, key=lambda x: x["score"])['index']
+    elif len(inertia) > 1:
+        diffs = [inertia[i] - inertia[i+1] for i in range(len(inertia)-1)]
+        optimal_index = diffs.index(max(diffs)) + 1
+    else:
+        optimal_index = 0
+
+    optimal_centroids = cluster_centroids[optimal_index]['centroids']
 
     return optimal_centroids
 
