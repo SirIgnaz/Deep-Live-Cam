@@ -847,21 +847,34 @@ def create_source_target_popup(
         remove_button_text = (
             _("Remove target") if item.get("target") else _("Ignore target")
         )
+        actions_frame = ctk.CTkFrame(entry_frame, fg_color="transparent")
+        actions_frame.grid(
+            row=1,
+            column=0,
+            columnspan=4,
+            padx=0,
+            pady=(6, 0),
+            sticky="ew",
+        )
+        actions_frame.grid_columnconfigure(0, weight=1)
+        actions_frame.grid_columnconfigure(1, weight=0)
+        actions_frame.grid_columnconfigure(2, weight=0)
+
         remove_target_button = ctk.CTkButton(
-            entry_frame,
+            actions_frame,
             text=remove_button_text,
             command=lambda id=id, frame=entry_frame: remove_target_entry(map, id, frame),
             width=DEFAULT_BUTTON_WIDTH,
         )
-        remove_target_button.grid(row=1, column=2, padx=10, pady=(6, 0), sticky="e")
+        remove_target_button.grid(row=0, column=1, padx=(0, 10), pady=0, sticky="e")
 
         adjust_target_button = ctk.CTkButton(
-            entry_frame,
+            actions_frame,
             text=_("Adjust target faces"),
             command=lambda id=id: on_adjust_target(map, id),
             width=DEFAULT_BUTTON_WIDTH,
         )
-        adjust_target_button.grid(row=1, column=3, padx=10, pady=(6, 0), sticky="e")
+        adjust_target_button.grid(row=0, column=2, padx=0, pady=0, sticky="e")
 
         if "source" in item:
             source_crop = item["source"].get("cv2")
