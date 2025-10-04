@@ -16,7 +16,16 @@ except ImportError:  # pragma: no cover - onnxruntime may not expose the C API p
     try:
         import onnxruntime  # type: ignore
 
-        OrtRuntimeException = getattr(onnxruntime, "RuntimeException")  # type: ignore[attr-defined]
+        class _OrtRuntimeFallback(RuntimeError):
+            """Fallback when onnxruntime lacks a RuntimeException attribute."""
+
+            pass
+
+        OrtRuntimeException = getattr(
+            onnxruntime,
+            "RuntimeException",
+            _OrtRuntimeFallback,
+        )  # type: ignore[attr-defined]
     except ImportError:  # pragma: no cover - onnxruntime is entirely unavailable.
         class OrtRuntimeException(RuntimeError):
             """Fallback runtime exception when onnxruntime is unavailable."""
