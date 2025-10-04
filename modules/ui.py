@@ -164,9 +164,9 @@ def load_switch_states():
             )
         )
         face_detector_size = switch_states.get("face_detector_size")
-        if not modules.globals.face_detector_size_cli_override and (
         if (
-            isinstance(face_detector_size, (list, tuple))
+            not modules.globals.face_detector_size_cli_override
+            and isinstance(face_detector_size, (list, tuple))
             and len(face_detector_size) == 2
         ):
             try:
