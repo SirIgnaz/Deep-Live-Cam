@@ -404,7 +404,6 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     ]
 
     def _format_size(size: Tuple[int, int]) -> str:
-    def _format_size(size: tuple[int, int]) -> str:
         return f"{size[0]} x {size[1]}"
 
     face_detector_size_map = {
