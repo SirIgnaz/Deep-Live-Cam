@@ -239,24 +239,32 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
     if is_image(modules.globals.target_path):
         if modules.globals.many_faces:
             source_face = default_source_face()
-            for map in modules.globals.source_target_map:
-                target_face = map["target"]["face"]
+            for map_entry in modules.globals.source_target_map:
+                target_data = map_entry.get("target")
+                if not target_data:
+                    continue
+                target_face = target_data["face"]
                 temp_frame = swap_face(source_face, target_face, temp_frame)
 
         elif not modules.globals.many_faces:
-            for map in modules.globals.source_target_map:
-                if "source" in map:
-                    source_face = map["source"]["face"]
-                    target_face = map["target"]["face"]
+            for map_entry in modules.globals.source_target_map:
+                if "source" in map_entry:
+                    target_data = map_entry.get("target")
+                    if not target_data:
+                        continue
+                    source_face = map_entry["source"]["face"]
+                    target_face = target_data["face"]
                     temp_frame = swap_face(source_face, target_face, temp_frame)
 
     elif is_video(modules.globals.target_path):
         if modules.globals.many_faces:
             source_face = default_source_face()
-            for map in modules.globals.source_target_map:
+            for map_entry in modules.globals.source_target_map:
+                if not map_entry.get("target"):
+                    continue
                 target_frames = (
-                    map.get("target_faces_in_frame_filtered")
-                    or map.get("target_faces_in_frame")
+                    map_entry.get("target_faces_in_frame_filtered")
+                    or map_entry.get("target_faces_in_frame")
                     or []
                 )
                 target_frame = [
@@ -268,17 +276,19 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
                         temp_frame = swap_face(source_face, target_face, temp_frame)
 
         elif not modules.globals.many_faces:
-            for map in modules.globals.source_target_map:
-                if "source" in map:
+            for map_entry in modules.globals.source_target_map:
+                if "source" in map_entry:
+                    if not map_entry.get("target"):
+                        continue
                     target_frames = (
-                        map.get("target_faces_in_frame_filtered")
-                        or map.get("target_faces_in_frame")
+                        map_entry.get("target_faces_in_frame_filtered")
+                        or map_entry.get("target_faces_in_frame")
                         or []
                     )
                     target_frame = [
                         f for f in target_frames if f.get("location") == temp_frame_path
                     ]
-                    source_face = map["source"]["face"]
+                    source_face = map_entry["source"]["face"]
 
                     for frame in target_frame:
                         for target_face in frame["faces"]:

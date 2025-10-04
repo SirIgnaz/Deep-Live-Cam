@@ -1,7 +1,7 @@
 import os
 import webbrowser
 import customtkinter as ctk
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 import cv2
 import numpy as np
 from cv2_enumerate_cameras import enumerate_cameras  # Add this import
@@ -707,6 +707,65 @@ def analyze_target(start: Callable[[], None], root: ctk.CTk):
         select_output_path(start)
 
 
+def remove_target_entry(
+    map_list: list, button_num: int, entry_frame: Optional[ctk.CTkFrame]
+) -> list:
+    global source_label_dict, target_label_dict
+
+    if not isinstance(map_list, list):
+        update_pop_status("Unable to remove target entry.")
+        return map_list
+
+    try:
+        index = int(button_num)
+    except (TypeError, ValueError):
+        update_pop_status("Unable to remove target entry.")
+        return map_list
+
+    if index < 0 or index >= len(map_list):
+        update_pop_status("Unable to remove target entry.")
+        return map_list
+
+    entry = map_list[index]
+    if not isinstance(entry, dict):
+        update_pop_status("Unable to remove target entry.")
+        return map_list
+
+    if entry.get("target_disabled"):
+        update_pop_status("Target entry already removed.")
+        return map_list
+
+    keys_to_remove = [
+        key
+        for key in list(entry.keys())
+        if key == "target"
+        or key == "_all_target_faces_in_frame"
+        or key.startswith("target_faces_in_frame")
+    ]
+
+    removed_any = False
+    for key in keys_to_remove:
+        if key in entry:
+            entry.pop(key, None)
+            removed_any = True
+
+    entry["target_disabled"] = True
+
+    entry_id = entry.get("id", index)
+    target_label_dict.pop(entry_id, None)
+    source_label_dict.pop(entry_id, None)
+
+    if entry_frame is not None and hasattr(entry_frame, "destroy"):
+        entry_frame.destroy()
+
+    if removed_any:
+        update_pop_status("Target entry removed.")
+    else:
+        update_pop_status("Target entry ignored.")
+
+    return map_list
+
+
 def create_source_target_popup(
         start: Callable[[], None], root: ctk.CTk, map: list
 ) -> None:
@@ -739,6 +798,8 @@ def create_source_target_popup(
     target_label_dict.clear()
 
     for item in map:
+        if item.get("target_disabled"):
+            continue
         id = item["id"]
 
         entry_frame = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
@@ -782,6 +843,17 @@ def create_source_target_popup(
         )
         target_label.grid(row=0, column=3, padx=10, pady=(0, 6))
         target_label_dict[id] = target_label
+
+        remove_button_text = (
+            _("Remove target") if item.get("target") else _("Ignore target")
+        )
+        remove_target_button = ctk.CTkButton(
+            entry_frame,
+            text=remove_button_text,
+            command=lambda id=id, frame=entry_frame: remove_target_entry(map, id, frame),
+            width=DEFAULT_BUTTON_WIDTH,
+        )
+        remove_target_button.grid(row=1, column=2, padx=10, pady=(6, 0), sticky="e")
 
         adjust_target_button = ctk.CTkButton(
             entry_frame,
@@ -894,6 +966,10 @@ def update_popup_target(map: list, button_num: int) -> list:
     try:
         entry = map[button_num]
     except (IndexError, TypeError):
+        return map
+
+    if entry.get("target_disabled"):
+        update_pop_status("This target entry has been removed.")
         return map
 
     target_frames_all = entry.get("_all_target_faces_in_frame")
