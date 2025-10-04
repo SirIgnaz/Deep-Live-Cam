@@ -53,6 +53,9 @@ def get_face_analyser() -> Any:
             else:
                 FACE_ANALYSER = None
                 raise error
+        FACE_ANALYSER.prepare(
+            ctx_id=0, det_size=modules.globals.face_detector_size
+        )
     return FACE_ANALYSER
 
 
