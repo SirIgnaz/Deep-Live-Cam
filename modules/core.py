@@ -6,7 +6,7 @@ if any(arg.startswith('--execution-provider') for arg in sys.argv):
 # reduce tensorflow log level
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import warnings
-from typing import List
+from typing import List, Tuple
 import platform
 import signal
 import shutil
@@ -26,6 +26,31 @@ if 'ROCMExecutionProvider' in modules.globals.execution_providers:
 
 warnings.filterwarnings('ignore', category=FutureWarning, module='insightface')
 warnings.filterwarnings('ignore', category=UserWarning, module='torchvision')
+
+
+def _parse_face_detector_size(value: str) -> Tuple[int, int]:
+    normalized = value.lower().replace(" ", "").replace(",", "x")
+    if "x" not in normalized:
+        raise argparse.ArgumentTypeError(
+            "face detector size must be in WIDTHxHEIGHT format"
+        )
+
+    width_str, height_str = normalized.split("x", 1)
+
+    try:
+        width = int(width_str)
+        height = int(height_str)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "face detector size must contain integer dimensions"
+        ) from error
+
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError(
+            "face detector size dimensions must be positive"
+        )
+
+    return (width, height)
 
 
 def parse_args() -> None:
@@ -50,6 +75,13 @@ def parse_args() -> None:
     program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int, default=suggest_max_memory())
     program.add_argument('--execution-provider', help='execution provider', dest='execution_provider', default=['cpu'], choices=suggest_execution_providers(), nargs='+')
     program.add_argument('--execution-threads', help='number of execution threads', dest='execution_threads', type=int, default=suggest_execution_threads())
+    program.add_argument(
+        '--face-detector-size',
+        help='set face detector size as WIDTHxHEIGHT (e.g. 640x640)',
+        dest='face_detector_size',
+        type=_parse_face_detector_size,
+        default=modules.globals.face_detector_size,
+    )
     program.add_argument('-v', '--version', action='version', version=f'{modules.metadata.name} {modules.metadata.version}')
 
     # register deprecated args
@@ -79,6 +111,12 @@ def parse_args() -> None:
     modules.globals.max_memory = args.max_memory
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
+    requested_face_detector_size = tuple(args.face_detector_size)
+    default_face_detector_size = tuple(program.get_default("face_detector_size"))
+    modules.globals.face_detector_size_cli_override = (
+        requested_face_detector_size != default_face_detector_size
+    )
+    modules.globals.face_detector_size = requested_face_detector_size
 
     if any(
         provider in modules.globals.execution_providers
