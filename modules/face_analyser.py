@@ -1,7 +1,6 @@
 import os
 import shutil
 
-from typing import Any, Optional, Tuple
 from typing import Any, Optional
 import insightface
 
@@ -55,11 +54,6 @@ def get_face_analyser() -> Any:
             else:
                 FACE_ANALYSER = None
                 raise error
-    return FACE_ANALYSER
-def reset_face_analyser(det_size: Optional[Tuple[int, int]] = None) -> Tuple[int, int]:
-        FACE_ANALYSER.prepare(
-            ctx_id=0, det_size=modules.globals.face_detector_size
-        )
     return FACE_ANALYSER
 
 
