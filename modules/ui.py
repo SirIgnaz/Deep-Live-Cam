@@ -954,7 +954,7 @@ def update_popup_target(map: list, button_num: int) -> list:
         faces = frame_entry.get("faces", [])
         for idx, face in enumerate(faces):
             bbox = _face_bbox(face)
-            if not bbox or len(bbox) < 4:
+            if bbox is None or len(bbox) < 4:
                 continue
 
             x_min, y_min, x_max, y_max = bbox
