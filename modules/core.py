@@ -6,7 +6,7 @@ if any(arg.startswith('--execution-provider') for arg in sys.argv):
 # reduce tensorflow log level
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import warnings
-from typing import List
+from typing import List, Tuple
 import platform
 import signal
 import shutil
@@ -27,7 +27,7 @@ if 'ROCMExecutionProvider' in modules.globals.execution_providers:
 warnings.filterwarnings('ignore', category=FutureWarning, module='insightface')
 warnings.filterwarnings('ignore', category=UserWarning, module='torchvision')
 
-
+def _parse_face_detector_size(value: str) -> Tuple[int, int]:
 def _parse_face_detector_size(value: str) -> tuple[int, int]:
     normalized = value.lower().replace(" ", "").replace(",", "x")
     if "x" not in normalized:

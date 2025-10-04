@@ -403,6 +403,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
         (1024, 1024),
     ]
 
+    def _format_size(size: Tuple[int, int]) -> str:
     def _format_size(size: tuple[int, int]) -> str:
         return f"{size[0]} x {size[1]}"
 
@@ -438,7 +439,6 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             )
             modules.globals.face_detector_size_cli_override = False
             modules.globals.face_detector_size = size
-
             save_switch_states()
 
     face_detector_size_label = ctk.CTkLabel(
