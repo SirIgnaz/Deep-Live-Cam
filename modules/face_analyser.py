@@ -183,19 +183,23 @@ def default_target_face():
                 best_frame = frame
                 break
 
+        if not best_face or not best_frame:
+            continue
+
         for frame in frames:
             for face in frame['faces']:
                 if face['det_score'] > best_face['det_score']:
                     best_face = face
                     best_frame = frame
 
-        x_min, y_min, x_max, y_max = best_face['bbox']
+        if best_face and best_frame:
+            x_min, y_min, x_max, y_max = best_face['bbox']
 
-        target_frame = cv2.imread(best_frame['location'])
-        map['target'] = {
-                        'cv2' : target_frame[int(y_min):int(y_max), int(x_min):int(x_max)],
-                        'face' : best_face
-                        }
+            target_frame = cv2.imread(best_frame['location'])
+            map['target'] = {
+                            'cv2' : target_frame[int(y_min):int(y_max), int(x_min):int(x_max)],
+                            'face' : best_face
+                            }
 
 
 def dump_faces(centroids: Any, frame_face_embeddings: list):
