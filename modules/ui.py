@@ -848,16 +848,21 @@ def update_popup_source(map: list, button_num: int) -> list:
     cv2_img = cv2.imread(source_path)
     face = get_one_face(cv2_img)
 
-    if not face:
+    if face is None:
         update_pop_status("Face could not be detected in last upload!")
         return map
 
     bbox = face.get("bbox") if isinstance(face, dict) else getattr(face, "bbox", None)
-    if not bbox:
+    if bbox is None:
         update_pop_status("Face could not be detected in last upload!")
         return map
 
-    x_min, y_min, x_max, y_max = bbox
+    try:
+        x_min, y_min, x_max, y_max = bbox
+    except (TypeError, ValueError):
+        update_pop_status("Face could not be detected in last upload!")
+        return map
+
     x_min, y_min, x_max, y_max = [int(value) for value in (x_min, y_min, x_max, y_max)]
     crop = cv2_img[y_min:y_max, x_min:x_max]
     if crop.size == 0:
