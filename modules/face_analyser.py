@@ -44,7 +44,56 @@ from pathlib import Path
 
 FACE_ANALYSER = None
 
-MIN_FACE_DET_SCORE = 0.5
+_DEFAULT_FACE_DET_SCORE_THRESHOLD = 0.5
+
+
+def _apply_threshold_to_analyser(
+    threshold: float, analyser: Optional[Any] = None
+) -> None:
+    """Apply the detection threshold to a face analyser instance if possible."""
+
+    if analyser is None:
+        analyser = FACE_ANALYSER
+
+    if analyser is None:
+        return
+
+    try:
+        analyser.det_thresh = threshold
+    except AttributeError:  # pragma: no cover - defensive for older insightface builds.
+        LOGGER.debug("Face analyser does not expose det_thresh for runtime updates.")
+
+    # Older insightface releases keep the detection threshold on the detection
+    # model instead of the main analyser object. Update that as well when present.
+    detection_models = getattr(analyser, "models", {})
+    detection_model = None
+    if isinstance(detection_models, dict):
+        detection_model = detection_models.get("detection")
+    if detection_model is not None:
+        try:
+            detection_model.det_thresh = threshold
+        except AttributeError:  # pragma: no cover - defensive compatibility path.
+            LOGGER.debug(
+                "Detection model does not expose det_thresh for runtime updates."
+            )
+
+
+def _initialise_face_analyser(det_size: tuple[int, int]) -> Any:
+    """Create, prepare and return a fresh InsightFace analyser instance."""
+
+    analyser = insightface.app.FaceAnalysis(
+        name="buffalo_l", providers=modules.globals.execution_providers
+    )
+    threshold = get_face_det_score_threshold()
+
+    try:
+        analyser.prepare(ctx_id=0, det_size=det_size, det_thresh=threshold)
+    except TypeError:
+        # Some insightface builds do not accept det_thresh as a keyword argument.
+        analyser.prepare(ctx_id=0, det_size=det_size)
+
+    _apply_threshold_to_analyser(threshold, analyser)
+    return analyser
 
 
 def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
@@ -58,16 +107,54 @@ def _get_face_det_score(face: Any) -> float:
     return score if score is not None else 0.0
 
 
+def get_face_det_score_threshold() -> float:
+    """Return the current face-detection score threshold."""
+
+    value = getattr(
+        modules.globals,
+        "face_det_score_threshold",
+        _DEFAULT_FACE_DET_SCORE_THRESHOLD,
+    )
+
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        threshold = _DEFAULT_FACE_DET_SCORE_THRESHOLD
+
+    return max(0.0, min(1.0, threshold))
+
+
+def set_face_det_score_threshold(value: Any) -> float:
+    """Update the global face-detection score threshold and return the applied value."""
+
+    current = getattr(
+        modules.globals,
+        "face_det_score_threshold",
+        _DEFAULT_FACE_DET_SCORE_THRESHOLD,
+    )
+
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        threshold = current
+
+    threshold = max(0.0, min(1.0, threshold))
+    modules.globals.face_det_score_threshold = threshold
+    _apply_threshold_to_analyser(threshold)
+    return threshold
+
+
+def _passes_face_det_threshold(face: Any) -> bool:
+    return _get_face_det_score(face) >= get_face_det_score_threshold()
+
+
 def get_face_analyser() -> Any:
     global FACE_ANALYSER
 
     if FACE_ANALYSER is None:
-        FACE_ANALYSER = insightface.app.FaceAnalysis(
-            name='buffalo_l', providers=modules.globals.execution_providers
-        )
         try:
-            FACE_ANALYSER.prepare(
-                ctx_id=0, det_size=modules.globals.face_detector_size
+            FACE_ANALYSER = _initialise_face_analyser(
+                modules.globals.face_detector_size
             )
         except Exception as error:
             default_size = (640, 640)
@@ -78,7 +165,7 @@ def get_face_analyser() -> Any:
                     f" Error: {error}\033[0m"
                 )
                 modules.globals.face_detector_size = default_size
-                FACE_ANALYSER.prepare(ctx_id=0, det_size=default_size)
+                FACE_ANALYSER = _initialise_face_analyser(default_size)
             else:
                 FACE_ANALYSER = None
                 raise error
@@ -251,6 +338,13 @@ def get_unique_faces_from_target_video() -> Any:
 
         temp_frame_paths = get_temp_frame_paths(modules.globals.target_path)
 
+        LOGGER.info(
+            "Scanning %s frames with detection threshold %.2f and detector size %s",
+            len(temp_frame_paths),
+            get_face_det_score_threshold(),
+            modules.globals.face_detector_size,
+        )
+
         i = 0
         for temp_frame_path in tqdm(temp_frame_paths, desc="Extracting face embeddings from frames"):
             temp_frame = cv2.imread(temp_frame_path)
@@ -259,13 +353,23 @@ def get_unique_faces_from_target_video() -> Any:
             filtered_faces = []
             if many_faces:
                 for face in many_faces:
-                    if _get_face_det_score(face) >= MIN_FACE_DET_SCORE:
+                    if _passes_face_det_threshold(face):
                         face_embeddings.append(face.normed_embedding)
                         filtered_faces.append(face)
             frame_face_embeddings.append({'frame': i, 'faces': filtered_faces, 'location': temp_frame_path})
             i += 1
 
         centroids = find_cluster_centroids(face_embeddings) if face_embeddings else []
+
+        LOGGER.info(
+            "Collected %s embeddings across %s frames (threshold %.2f)",
+            len(face_embeddings),
+            len(temp_frame_paths),
+            get_face_det_score_threshold(),
+        )
+
+        if not centroids:
+            LOGGER.info("No face clusters met the detection threshold; skipping mapping UI.")
 
         if centroids:
             for frame in frame_face_embeddings:
@@ -284,8 +388,10 @@ def get_unique_faces_from_target_video() -> Any:
             temp = []
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
                 faces_for_centroid = [
-                    face for face in frame['faces']
-                    if _get_face_attribute(face, 'target_centroid') == i and _get_face_det_score(face) >= MIN_FACE_DET_SCORE
+                    face
+                    for face in frame['faces']
+                    if _get_face_attribute(face, 'target_centroid') == i
+                    and _passes_face_det_threshold(face)
                 ]
                 temp.append({'frame': frame['frame'], 'faces': faces_for_centroid, 'location': frame['location']})
 
@@ -294,6 +400,9 @@ def get_unique_faces_from_target_video() -> Any:
             modules.globals.source_target_map[i]['_all_target_faces_in_frame'] = temp
             modules.globals.source_target_map[i]['target_faces_in_frame_filtered'] = filtered_temp
             modules.globals.source_target_map[i]['target_faces_in_frame'] = filtered_temp
+
+        if centroids:
+            LOGGER.info("Prepared %s face clusters for manual mapping.", len(centroids))
 
         # dump_faces(centroids, frame_face_embeddings)
         default_target_face()

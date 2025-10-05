@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 # single thread doubles cuda performance - needs to be set before torch import
@@ -14,6 +15,8 @@ import argparse
 import torch
 import onnxruntime
 import tensorflow
+
+logging.basicConfig(level=logging.INFO)
 
 import modules.globals
 import modules.metadata
