@@ -6,7 +6,6 @@ from typing import Any, Optional
 import insightface
 
 import cv2
-import numpy as np
 import modules.globals
 from tqdm import tqdm
 
@@ -56,6 +55,10 @@ def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
 def _get_face_det_score(face: Any) -> float:
     score = _get_face_attribute(face, 'det_score')
     return score if score is not None else 0.0
+
+
+def _log_no_faces(context: str, path: str) -> None:
+    LOGGER.warning("No faces detected %s: %s", context, path)
 
 
 def get_face_analyser() -> Any:
@@ -220,7 +223,13 @@ def get_unique_faces_from_target_image() -> Any:
     try:
         modules.globals.source_target_map = []
         target_frame = cv2.imread(modules.globals.target_path)
+        if target_frame is None:
+            LOGGER.error("Failed to read target image: %s", modules.globals.target_path)
+            return None
         many_faces = get_many_faces(target_frame)
+        if not many_faces:
+            _log_no_faces("in target image", modules.globals.target_path)
+            return None
         i = 0
 
         for face in many_faces:
@@ -251,9 +260,18 @@ def get_unique_faces_from_target_video() -> Any:
 
         temp_frame_paths = get_temp_frame_paths(modules.globals.target_path)
 
+        if not temp_frame_paths:
+            LOGGER.warning(
+                "No frames were extracted from target video: %s", modules.globals.target_path
+            )
+            return None
+
         i = 0
         for temp_frame_path in tqdm(temp_frame_paths, desc="Extracting face embeddings from frames"):
             temp_frame = cv2.imread(temp_frame_path)
+            if temp_frame is None:
+                LOGGER.error("Failed to read extracted frame: %s", temp_frame_path)
+                continue
             many_faces = get_many_faces(temp_frame)
 
             filtered_faces = []
@@ -267,14 +285,17 @@ def get_unique_faces_from_target_video() -> Any:
 
         centroids = find_cluster_centroids(face_embeddings) if face_embeddings else []
 
-        if centroids:
-            for frame in frame_face_embeddings:
-                for face in frame['faces']:
-                    closest_centroid_index, _ = find_closest_centroid(centroids, face.normed_embedding)
-                    if isinstance(face, dict):
-                        face['target_centroid'] = closest_centroid_index
-                    else:
-                        setattr(face, 'target_centroid', closest_centroid_index)
+        if not centroids:
+            _log_no_faces("across target video frames", modules.globals.target_path)
+            return None
+
+        for frame in frame_face_embeddings:
+            for face in frame['faces']:
+                closest_centroid_index, _ = find_closest_centroid(centroids, face.normed_embedding)
+                if isinstance(face, dict):
+                    face['target_centroid'] = closest_centroid_index
+                else:
+                    setattr(face, 'target_centroid', closest_centroid_index)
 
         for i in range(len(centroids)):
             modules.globals.source_target_map.append({
