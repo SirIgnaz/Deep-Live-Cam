@@ -47,43 +47,6 @@ FACE_ANALYSER = None
 _DEFAULT_FACE_DET_SCORE_THRESHOLD = 0.5
 
 
-def _apply_threshold_to_analyser(threshold: float) -> None:
-    """Apply the detection threshold to the cached analyser, if available."""
-
-    global FACE_ANALYSER
-
-    if FACE_ANALYSER is None:
-        return
-
-    try:
-        FACE_ANALYSER.det_thresh = threshold
-    except AttributeError:  # pragma: no cover - defensive for older insightface builds.
-        LOGGER.debug("Face analyser does not expose det_thresh for runtime updates.")
-
-
-def _prepare_face_analyser(det_size: tuple[int, int]) -> None:
-    """Prepare the cached analyser with the configured detector size and threshold."""
-
-    global FACE_ANALYSER
-
-    if FACE_ANALYSER is None:
-        return
-
-    threshold = get_face_det_score_threshold()
-
-    try:
-        FACE_ANALYSER.prepare(
-            ctx_id=0,
-            det_size=det_size,
-            det_thresh=threshold,
-        )
-    except TypeError:
-        # Some insightface builds do not accept det_thresh as a keyword argument.
-        FACE_ANALYSER.prepare(ctx_id=0, det_size=det_size)
-
-    _apply_threshold_to_analyser(threshold)
-
-
 def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
     if isinstance(face, dict):
         return face.get(attribute, default)
@@ -128,7 +91,6 @@ def set_face_det_score_threshold(value: Any) -> float:
 
     threshold = max(0.0, min(1.0, threshold))
     modules.globals.face_det_score_threshold = threshold
-    _apply_threshold_to_analyser(threshold)
     return threshold
 
 
