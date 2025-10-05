@@ -45,6 +45,7 @@ codeformer_mask_blur = 45
 codeformer_color_strength = 1.0
 face_detector_size = (640, 640)
 face_detector_size_cli_override = False
+face_det_score_threshold = 0.5
 
 # DirectML face enhancement can be enabled via UI or environment variable. Keep
 # the environment variable compatibility so headless executions behave the same
