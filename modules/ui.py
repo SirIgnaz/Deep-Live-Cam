@@ -641,7 +641,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_fps_switch.grid(row=5, column=0, sticky="ew", pady=12)
+    show_fps_switch.grid(row=7, column=0, sticky="ew", pady=12)
 
     show_mouth_mask_box_var = ctk.BooleanVar(value=modules.globals.show_mouth_mask_box)
     show_mouth_mask_box_switch = ctk.CTkSwitch(
@@ -658,7 +658,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    show_mouth_mask_box_switch.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+    show_mouth_mask_box_switch.grid(row=8, column=0, sticky="ew", pady=12)
 
     cta_frame = ctk.CTkFrame(content, fg_color="transparent")
     cta_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
