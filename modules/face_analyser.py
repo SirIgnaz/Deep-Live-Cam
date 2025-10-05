@@ -44,7 +44,7 @@ from pathlib import Path
 
 FACE_ANALYSER = None
 
-MIN_FACE_DET_SCORE = 0.5
+_DEFAULT_FACE_DET_SCORE_THRESHOLD = 0.5
 
 
 def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
@@ -56,6 +56,46 @@ def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
 def _get_face_det_score(face: Any) -> float:
     score = _get_face_attribute(face, 'det_score')
     return score if score is not None else 0.0
+
+
+def get_face_det_score_threshold() -> float:
+    """Return the current face-detection score threshold."""
+
+    value = getattr(
+        modules.globals,
+        "face_det_score_threshold",
+        _DEFAULT_FACE_DET_SCORE_THRESHOLD,
+    )
+
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        threshold = _DEFAULT_FACE_DET_SCORE_THRESHOLD
+
+    return max(0.0, min(1.0, threshold))
+
+
+def set_face_det_score_threshold(value: Any) -> float:
+    """Update the global face-detection score threshold and return the applied value."""
+
+    current = getattr(
+        modules.globals,
+        "face_det_score_threshold",
+        _DEFAULT_FACE_DET_SCORE_THRESHOLD,
+    )
+
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        threshold = current
+
+    threshold = max(0.0, min(1.0, threshold))
+    modules.globals.face_det_score_threshold = threshold
+    return threshold
+
+
+def _passes_face_det_threshold(face: Any) -> bool:
+    return _get_face_det_score(face) >= get_face_det_score_threshold()
 
 
 def get_face_analyser() -> Any:
@@ -259,7 +299,7 @@ def get_unique_faces_from_target_video() -> Any:
             filtered_faces = []
             if many_faces:
                 for face in many_faces:
-                    if _get_face_det_score(face) >= MIN_FACE_DET_SCORE:
+                    if _passes_face_det_threshold(face):
                         face_embeddings.append(face.normed_embedding)
                         filtered_faces.append(face)
             frame_face_embeddings.append({'frame': i, 'faces': filtered_faces, 'location': temp_frame_path})
@@ -284,8 +324,10 @@ def get_unique_faces_from_target_video() -> Any:
             temp = []
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
                 faces_for_centroid = [
-                    face for face in frame['faces']
-                    if _get_face_attribute(face, 'target_centroid') == i and _get_face_det_score(face) >= MIN_FACE_DET_SCORE
+                    face
+                    for face in frame['faces']
+                    if _get_face_attribute(face, 'target_centroid') == i
+                    and _passes_face_det_threshold(face)
                 ]
                 temp.append({'frame': frame['frame'], 'faces': faces_for_centroid, 'location': frame['location']})
 
