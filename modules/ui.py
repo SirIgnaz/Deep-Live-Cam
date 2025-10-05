@@ -127,6 +127,7 @@ def save_switch_states():
         "codeformer_mask_blur": modules.globals.codeformer_mask_blur,
         "codeformer_color_strength": modules.globals.codeformer_color_strength,
         "face_detector_size": list(modules.globals.face_detector_size),
+        "face_det_score_threshold": modules.globals.face_det_score_threshold,
     }
     with open("switch_states.json", "w") as f:
         json.dump(switch_states, f)
@@ -163,6 +164,9 @@ def load_switch_states():
                 "codeformer_color_strength", modules.globals.codeformer_color_strength
             )
         )
+        threshold_value = switch_states.get("face_det_score_threshold")
+        face_analyser_module.set_face_det_score_threshold(threshold_value)
+
         face_detector_size = switch_states.get("face_detector_size")
         if (
             not modules.globals.face_detector_size_cli_override
@@ -202,7 +206,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     content = ctk.CTkFrame(root, corner_radius=18)
     content.grid(row=0, column=0, sticky="nsew", padx=24, pady=24)
-    content.grid_columnconfigure((0, 1), weight=1)
+    for column in range(2):
+        content.grid_columnconfigure(column, weight=1)
     content.grid_rowconfigure(1, weight=1)
     content.grid_rowconfigure(3, weight=1)
 
@@ -230,7 +235,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     preview_container = ctk.CTkFrame(content, corner_radius=16)
     preview_container.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(18, 12))
-    preview_container.grid_columnconfigure((0, 1), weight=1)
+    for column in range(2):
+        preview_container.grid_columnconfigure(column, weight=1)
     preview_container.grid_rowconfigure(1, weight=1)
 
     source_card = ctk.CTkFrame(preview_container, corner_radius=14)
@@ -292,7 +298,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     options_frame = ctk.CTkFrame(content, corner_radius=16)
     options_frame.grid(row=3, column=0, columnspan=2, sticky="nsew")
-    options_frame.grid_columnconfigure((0, 1), weight=1)
+    for column in range(2):
+        options_frame.grid_columnconfigure(column, weight=1)
 
     left_option_column = ctk.CTkFrame(options_frame, fg_color="transparent")
     left_option_column.grid(row=0, column=0, sticky="nsew", padx=(18, 9), pady=18)
@@ -455,6 +462,41 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     )
     face_detector_size_option_menu.grid(row=3, column=0, sticky="ew", pady=12)
 
+    def _format_face_det_threshold_text(value: float) -> str:
+        return f"{_('Face detection threshold')}: {value:.2f}"
+
+    current_face_det_threshold = face_analyser_module.get_face_det_score_threshold()
+    face_det_score_threshold_label_var = ctk.StringVar(
+        value=_format_face_det_threshold_text(current_face_det_threshold)
+    )
+
+    def _on_face_det_score_threshold_change(value: float) -> None:
+        applied_value = face_analyser_module.set_face_det_score_threshold(value)
+        face_det_score_threshold_label_var.set(
+            _format_face_det_threshold_text(applied_value)
+        )
+        save_switch_states()
+
+    face_det_score_threshold_label = ctk.CTkLabel(
+        right_option_column,
+        textvariable=face_det_score_threshold_label_var,
+        anchor="w",
+    )
+    face_det_score_threshold_label.grid(row=4, column=0, sticky="ew")
+
+    face_det_score_threshold_slider = ctk.CTkSlider(
+        right_option_column,
+        from_=0.0,
+        to=1.0,
+        number_of_steps=100,
+    )
+    face_det_score_threshold_slider.grid(row=5, column=0, sticky="ew", pady=12)
+
+    face_det_score_threshold_slider.set(current_face_det_threshold)
+    face_det_score_threshold_slider.configure(
+        command=_on_face_det_score_threshold_change
+    )
+
     color_correction_value = ctk.BooleanVar(value=modules.globals.color_correction)
     color_correction_switch = ctk.CTkSwitch(
         right_option_column,
@@ -466,7 +508,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    color_correction_switch.grid(row=4, column=0, sticky="ew", pady=12)
+    color_correction_switch.grid(row=6, column=0, sticky="ew", pady=12)
 
     directml_face_enhancer_value = ctk.BooleanVar(
         value=modules.globals.allow_directml_face_enhancer
@@ -481,10 +523,10 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             save_switch_states(),
         ),
     )
-    directml_face_enhancer_switch.grid(row=5, column=0, sticky="ew", pady=12)
+    directml_face_enhancer_switch.grid(row=7, column=0, sticky="ew", pady=12)
 
     codeformer_settings_frame = ctk.CTkFrame(right_option_column, fg_color="transparent")
-    codeformer_settings_frame.grid(row=6, column=0, sticky="ew", pady=12)
+    codeformer_settings_frame.grid(row=8, column=0, sticky="ew", pady=12)
     codeformer_settings_frame.grid_columnconfigure(0, weight=1)
     codeformer_settings_frame.grid_columnconfigure(1, weight=0)
     codeformer_settings_frame.grid_columnconfigure(2, weight=0)
@@ -662,7 +704,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     cta_frame = ctk.CTkFrame(content, fg_color="transparent")
     cta_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
-    cta_frame.grid_columnconfigure((0, 1, 2), weight=1)
+    for column in range(3):
+        cta_frame.grid_columnconfigure(column, weight=1)
 
     start_button = ctk.CTkButton(
         cta_frame,
@@ -684,7 +727,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     camera_frame = ctk.CTkFrame(content, corner_radius=16)
     camera_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=18)
-    camera_frame.grid_columnconfigure((0, 1, 2), weight=1)
+    for column in range(3):
+        camera_frame.grid_columnconfigure(column, weight=1)
 
     camera_label = ctk.CTkLabel(camera_frame, text=_("Select Camera:"), anchor="w")
     camera_label.grid(row=0, column=0, sticky="ew", padx=(18, 12), pady=18)
@@ -1197,7 +1241,8 @@ def update_popup_target(map: list, button_num: int) -> list:
 
     action_frame = ctk.CTkFrame(selection_window, fg_color="transparent")
     action_frame.grid(row=4, column=0, padx=20, pady=(10, 20), sticky="ew")
-    action_frame.grid_columnconfigure((0, 1), weight=1)
+    for column in range(2):
+        action_frame.grid_columnconfigure(column, weight=1)
 
     status_label = ctk.CTkLabel(selection_window, text="")
     status_label.grid(row=5, column=0, padx=20, pady=(0, 10))
