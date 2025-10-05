@@ -106,9 +106,7 @@ def get_face_analyser() -> Any:
             name='buffalo_l', providers=modules.globals.execution_providers
         )
         try:
-            FACE_ANALYSER.prepare(
-                ctx_id=0, det_size=modules.globals.face_detector_size
-            )
+            _prepare_face_analyser(modules.globals.face_detector_size)
         except Exception as error:
             default_size = (640, 640)
             if modules.globals.face_detector_size != default_size:
@@ -118,7 +116,7 @@ def get_face_analyser() -> Any:
                     f" Error: {error}\033[0m"
                 )
                 modules.globals.face_detector_size = default_size
-                FACE_ANALYSER.prepare(ctx_id=0, det_size=default_size)
+                _prepare_face_analyser(default_size)
             else:
                 FACE_ANALYSER = None
                 raise error
