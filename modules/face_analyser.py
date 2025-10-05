@@ -102,9 +102,6 @@ def get_face_analyser() -> Any:
     global FACE_ANALYSER
 
     if FACE_ANALYSER is None:
-        FACE_ANALYSER = insightface.app.FaceAnalysis(
-            name='buffalo_l', providers=modules.globals.execution_providers
-        )
         try:
             _prepare_face_analyser(modules.globals.face_detector_size)
         except Exception as error:
@@ -289,6 +286,13 @@ def get_unique_faces_from_target_video() -> Any:
 
         temp_frame_paths = get_temp_frame_paths(modules.globals.target_path)
 
+        LOGGER.info(
+            "Scanning %s frames with detection threshold %.2f and detector size %s",
+            len(temp_frame_paths),
+            get_face_det_score_threshold(),
+            modules.globals.face_detector_size,
+        )
+
         i = 0
         for temp_frame_path in tqdm(temp_frame_paths, desc="Extracting face embeddings from frames"):
             temp_frame = cv2.imread(temp_frame_path)
@@ -304,6 +308,16 @@ def get_unique_faces_from_target_video() -> Any:
             i += 1
 
         centroids = find_cluster_centroids(face_embeddings) if face_embeddings else []
+
+        LOGGER.info(
+            "Collected %s embeddings across %s frames (threshold %.2f)",
+            len(face_embeddings),
+            len(temp_frame_paths),
+            get_face_det_score_threshold(),
+        )
+
+        if not centroids:
+            LOGGER.info("No face clusters met the detection threshold; skipping mapping UI.")
 
         if centroids:
             for frame in frame_face_embeddings:
@@ -334,6 +348,9 @@ def get_unique_faces_from_target_video() -> Any:
             modules.globals.source_target_map[i]['_all_target_faces_in_frame'] = temp
             modules.globals.source_target_map[i]['target_faces_in_frame_filtered'] = filtered_temp
             modules.globals.source_target_map[i]['target_faces_in_frame'] = filtered_temp
+
+        if centroids:
+            LOGGER.info("Prepared %s face clusters for manual mapping.", len(centroids))
 
         # dump_faces(centroids, frame_face_embeddings)
         default_target_face()
