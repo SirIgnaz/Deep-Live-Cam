@@ -47,6 +47,41 @@ FACE_ANALYSER = None
 _DEFAULT_FACE_DET_SCORE_THRESHOLD = 0.5
 
 
+def _prepare_face_analyser(det_size: Optional[tuple[int, int]] = None) -> None:
+    """Initialise the global ``FACE_ANALYSER`` instance.
+
+    The function keeps the previous behaviour of lazily creating the
+    ``insightface`` analyser while also respecting the execution provider
+    preferences stored in ``modules.globals``.  Older ``insightface`` releases do
+    not accept the ``providers`` keyword, therefore we guard the call and retry
+    without the optional arguments if necessary.
+    """
+
+    global FACE_ANALYSER
+
+    det_size = det_size or modules.globals.face_detector_size or (640, 640)
+
+    try:
+        width, height = det_size
+        det_size = (int(width), int(height))
+    except Exception:
+        det_size = (640, 640)
+
+    provider_kwargs = {}
+    providers = modules.globals.execution_providers or []
+    if providers:
+        provider_kwargs["providers"] = providers
+
+    try:
+        FACE_ANALYSER = insightface.app.FaceAnalysis(**provider_kwargs)
+    except TypeError:
+        # ``providers`` is not supported on older ``insightface`` versions.
+        FACE_ANALYSER = insightface.app.FaceAnalysis()
+
+    FACE_ANALYSER.prepare(ctx_id=0, det_size=det_size)
+    modules.globals.face_detector_size = det_size
+
+
 def _get_face_attribute(face: Any, attribute: str, default: Any = None) -> Any:
     if isinstance(face, dict):
         return face.get(attribute, default)
