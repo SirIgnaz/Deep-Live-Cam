@@ -303,6 +303,35 @@ python run.py --execution-provider amd
     destination frame). Lower blur values keep sharper seams, while reducing
     colour strength preserves more of the original lighting.
 
+**ZLUDA (CUDA on AMD/Intel GPUs)**
+
+ZLUDA can translate CUDA calls to run on non-NVIDIA GPUs. The project is still
+experimental, but several users have reported success accelerating
+Deep-Live-Cam with it.
+
+1. Download the latest ZLUDA Windows package for your GPU vendor from the
+   [official repository](https://github.com/ZLUDA/ZLUDA/releases) and extract it.
+2. Place the provided `nvcuda.dll` and `nvml.dll` files next to the Python
+   executable that launches Deep-Live-Cam (for a virtual environment this is
+   usually `venv\Scripts`). Alternatively, add the extracted folder to your
+   `PATH` so Python can load the shim.
+3. Set the environment variable `ZLUDA_OVERRIDE=1` to force applications to use
+   the shim even if a real NVIDIA driver is detected.
+4. Launch Deep-Live-Cam with the CUDA execution provider alias:
+
+   ```bash
+   python run.py --execution-provider zluda
+   ```
+
+5. During the first run ZLUDA may need to compile kernels; expect an initial
+   pause similar to the one observed with DirectML. Subsequent runs should be
+   faster once the caches are populated.
+
+If ZLUDA is installed correctly, Deep-Live-Cam will treat it as a CUDA backend
+and expose the usual CUDA controls while running on your AMD or Intel GPU. When
+the shim cannot be loaded, the application falls back to CPU execution and
+prints a warning.
+
 **OpenVINO™ Execution Provider (Intel)**
 
 1. Install dependencies:
