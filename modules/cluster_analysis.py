@@ -12,11 +12,11 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
 
     sample_kwargs = {}
     num_embeddings = len(embeddings)
-    if num_embeddings > 1:
+    if num_embeddings > 1000:
         # ``silhouette_score`` performs an expensive pairwise distance computation.
         # Sampling keeps the complexity manageable for long videos while
         # producing a stable estimate for the optimal cluster count.
-        sample_kwargs["sample_size"] = min(120, num_embeddings)
+        sample_kwargs["sample_size"] = min(num_embeddings, 1000)
         sample_kwargs["random_state"] = 0
 
     for idx, k in enumerate(K):
