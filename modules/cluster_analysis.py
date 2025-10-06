@@ -20,7 +20,7 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
         sample_kwargs["random_state"] = 0
 
     for idx, k in enumerate(K):
-        kmeans = KMeans(n_clusters=k, random_state=0)
+        kmeans = KMeans(n_clusters=k, random_state=0, n_init="auto")
         kmeans.fit(embeddings)
         inertia.append(kmeans.inertia_)
         cluster_centroids.append({"k": k, "centroids": kmeans.cluster_centers_})
