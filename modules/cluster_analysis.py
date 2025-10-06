@@ -10,19 +10,14 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
     silhouette_scores = []
     K = range(1, max_k+1)
 
-    embeddings = np.asarray(embeddings)
+    sample_kwargs = {}
     num_embeddings = len(embeddings)
-
-    sample_indices = None
-    sampled_embeddings = embeddings
-    if num_embeddings > 1:
+    if num_embeddings > 1000:
         # ``silhouette_score`` performs an expensive pairwise distance computation.
         # Sampling keeps the complexity manageable for long videos while
         # producing a stable estimate for the optimal cluster count.
-        sample_size = min(120, num_embeddings)
-        if num_embeddings > sample_size:
-            sample_indices = np.linspace(0, num_embeddings - 1, sample_size, dtype=int)
-            sampled_embeddings = embeddings[sample_indices]
+        sample_kwargs["sample_size"] = min(num_embeddings, 1000)
+        sample_kwargs["random_state"] = 0
 
     for idx, k in enumerate(K):
         kmeans = KMeans(n_clusters=k, random_state=0, n_init="auto")
@@ -32,17 +27,7 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
 
         if k > 1:
             try:
-                if sample_indices is None:
-                    score_embeddings = embeddings
-                    score_labels = kmeans.labels_
-                else:
-                    score_embeddings = sampled_embeddings
-                    score_labels = kmeans.labels_[sample_indices]
-
-                if len(np.unique(score_labels)) < 2:
-                    continue
-
-                score = silhouette_score(score_embeddings, score_labels)
+                score = silhouette_score(embeddings, kmeans.labels_, **sample_kwargs)
             except ValueError:
                 continue
             silhouette_scores.append({"index": idx, "score": score})
