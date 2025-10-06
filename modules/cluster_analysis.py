@@ -10,6 +10,15 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
     silhouette_scores = []
     K = range(1, max_k+1)
 
+    sample_kwargs = {}
+    num_embeddings = len(embeddings)
+    if num_embeddings > 1000:
+        # ``silhouette_score`` performs an expensive pairwise distance computation.
+        # Sampling keeps the complexity manageable for long videos while
+        # producing a stable estimate for the optimal cluster count.
+        sample_kwargs["sample_size"] = min(num_embeddings, 1000)
+        sample_kwargs["random_state"] = 0
+
     for idx, k in enumerate(K):
         kmeans = KMeans(n_clusters=k, random_state=0)
         kmeans.fit(embeddings)
@@ -18,7 +27,7 @@ def find_cluster_centroids(embeddings, max_k=10) -> Any:
 
         if k > 1:
             try:
-                score = silhouette_score(embeddings, kmeans.labels_)
+                score = silhouette_score(embeddings, kmeans.labels_, **sample_kwargs)
             except ValueError:
                 continue
             silhouette_scores.append({"index": idx, "score": score})
