@@ -177,6 +177,7 @@ def decode_execution_providers(execution_providers: List[str]) -> List[str]:
     provider_aliases = {
         'directml': ['dml'],
         'amd': ['dml', 'rocm'],
+        'zluda': ['cuda'],
     }
 
     normalized_execution_providers: List[str] = []
@@ -235,6 +236,9 @@ def suggest_execution_providers() -> List[str]:
         providers.append('amd')
     elif 'dml' in providers and 'amd' not in providers:
         providers.append('amd')
+
+    if 'cuda' in providers and 'zluda' not in providers:
+        providers.append('zluda')
 
     return providers
 
